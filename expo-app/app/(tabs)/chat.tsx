@@ -73,35 +73,32 @@ export default function ChatScreen() {
         body: JSON.stringify({ content: userMessage.content }),
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      // React Native doesn't support ReadableStream / getReader().
+      // Read the full SSE response as text, then parse all data lines.
+      const raw = await res.text();
+      const lines = raw.split("\n");
       let fullText = "";
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.done) break;
-                if (data.content) {
-                  fullText += data.content;
-                  setMessages((prev) =>
-                    prev.map((m) => (m.id === assistantId ? { ...m, content: fullText } : m))
-                  );
-                  scrollToBottom();
-                }
-              } catch {}
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.done) break;
+            if (data.content) {
+              fullText += data.content;
             }
-          }
+          } catch {}
         }
       }
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, content: fullText || "I couldn't generate a response. Please try again." } : m))
+      );
+      scrollToBottom();
     } catch (e) {
       console.error("Chat error:", e);
       setMessages((prev) =>

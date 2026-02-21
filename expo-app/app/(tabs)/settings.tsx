@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   Switch, Modal, Pressable, StyleSheet, ActivityIndicator, Platform, Alert,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -56,7 +57,10 @@ export default function SettingsScreen() {
         if (Platform.OS !== "ios") {
           Alert.alert("Not Available", "Apple Health sync is only available on iOS devices.");
         } else {
-          Alert.alert("No Data", "No health data was found. Make sure you have granted Aura access in Health settings.");
+          Alert.alert(
+            "No Health Data Found",
+            "This could mean:\n\n• Aura doesn't have permission to read Health data — open Settings → Health → Aura and enable all categories\n\n• No recent health data is available (heart rate, HRV, sleep, VO2 max)\n\n• You're running on the Simulator (no real Health data)"
+          );
         }
         setSyncing(false);
         return;
@@ -217,52 +221,56 @@ export default function SettingsScreen() {
       </ScrollView>
 
       <Modal visible={showGoalSheet} transparent animationType="slide">
-        <Pressable style={s.overlay} onPress={() => setShowGoalSheet(false)}>
-          <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Set BioAge Goal</Text>
-            <Text style={s.sheetDesc}>What biological age are you aiming for?</Text>
-            <TextInput
-              style={s.sheetInput}
-              keyboardType="numeric"
-              placeholder="e.g. 25"
-              placeholderTextColor={colors.mutedForeground}
-              value={goalInput}
-              onChangeText={setGoalInput}
-              testID="input-goal"
-            />
-            <TouchableOpacity style={s.sheetCta} onPress={handleSaveGoal} disabled={savingGoal}>
-              {savingGoal ? <ActivityIndicator color={colors.white} /> : <Text style={s.sheetCtaText}>Save Goal</Text>}
-            </TouchableOpacity>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <Pressable style={s.overlay} onPress={() => setShowGoalSheet(false)}>
+            <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
+              <View style={s.sheetHandle} />
+              <Text style={s.sheetTitle}>Set BioAge Goal</Text>
+              <Text style={s.sheetDesc}>What biological age are you aiming for?</Text>
+              <TextInput
+                style={s.sheetInput}
+                keyboardType="numeric"
+                placeholder="e.g. 25"
+                placeholderTextColor={colors.mutedForeground}
+                value={goalInput}
+                onChangeText={setGoalInput}
+                testID="input-goal"
+              />
+              <TouchableOpacity style={s.sheetCta} onPress={handleSaveGoal} disabled={savingGoal}>
+                {savingGoal ? <ActivityIndicator color={colors.white} /> : <Text style={s.sheetCtaText}>Save Goal</Text>}
+              </TouchableOpacity>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showOverrideSheet} transparent animationType="slide">
-        <Pressable style={s.overlay} onPress={() => setShowOverrideSheet(false)}>
-          <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Lab Data Overrides</Text>
-            <Text style={s.sheetDesc}>Enter lab-verified values to improve accuracy.</Text>
-            <View style={s.overrideFields}>
-              <View style={s.fieldGroup}>
-                <Text style={s.fieldLabel}>VO2 Max (ml/kg/min)</Text>
-                <TextInput style={s.sheetInput} keyboardType="numeric" placeholder="e.g. 45" placeholderTextColor={colors.mutedForeground} value={vo2Input} onChangeText={setVo2Input} testID="input-vo2" />
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <Pressable style={s.overlay} onPress={() => setShowOverrideSheet(false)}>
+            <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
+              <View style={s.sheetHandle} />
+              <Text style={s.sheetTitle}>Lab Data Overrides</Text>
+              <Text style={s.sheetDesc}>Enter lab-verified values to improve accuracy.</Text>
+              <View style={s.overrideFields}>
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>VO2 Max (ml/kg/min)</Text>
+                  <TextInput style={s.sheetInput} keyboardType="numeric" placeholder="e.g. 45" placeholderTextColor={colors.mutedForeground} value={vo2Input} onChangeText={setVo2Input} testID="input-vo2" />
+                </View>
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Resting HR (bpm)</Text>
+                  <TextInput style={s.sheetInput} keyboardType="numeric" placeholder="e.g. 54" placeholderTextColor={colors.mutedForeground} value={hrInput} onChangeText={setHrInput} testID="input-hr" />
+                </View>
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>HRV (ms)</Text>
+                  <TextInput style={s.sheetInput} keyboardType="numeric" placeholder="e.g. 68" placeholderTextColor={colors.mutedForeground} value={hrvInput} onChangeText={setHrvInput} testID="input-hrv" />
+                </View>
               </View>
-              <View style={s.fieldGroup}>
-                <Text style={s.fieldLabel}>Resting HR (bpm)</Text>
-                <TextInput style={s.sheetInput} keyboardType="numeric" placeholder="e.g. 54" placeholderTextColor={colors.mutedForeground} value={hrInput} onChangeText={setHrInput} testID="input-hr" />
-              </View>
-              <View style={s.fieldGroup}>
-                <Text style={s.fieldLabel}>HRV (ms)</Text>
-                <TextInput style={s.sheetInput} keyboardType="numeric" placeholder="e.g. 68" placeholderTextColor={colors.mutedForeground} value={hrvInput} onChangeText={setHrvInput} testID="input-hrv" />
-              </View>
-            </View>
-            <TouchableOpacity style={s.sheetCta} onPress={handleSaveOverrides} disabled={savingOverrides}>
-              {savingOverrides ? <ActivityIndicator color={colors.white} /> : <Text style={s.sheetCtaText}>Save Overrides</Text>}
-            </TouchableOpacity>
+              <TouchableOpacity style={s.sheetCta} onPress={handleSaveOverrides} disabled={savingOverrides}>
+                {savingOverrides ? <ActivityIndicator color={colors.white} /> : <Text style={s.sheetCtaText}>Save Overrides</Text>}
+              </TouchableOpacity>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

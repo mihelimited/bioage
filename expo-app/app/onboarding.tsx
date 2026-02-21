@@ -128,13 +128,48 @@ export default function OnboardingScreen() {
     setError("");
     try {
       const realMetrics = await syncHealthData();
-      const metrics = realMetrics.length > 0 ? realMetrics : seedMetrics;
-      await registerAndPostMetrics(metrics);
+      if (realMetrics.length > 0) {
+        await registerAndPostMetrics(realMetrics);
+      } else {
+        // HealthKit returned nothing — tell user, fall back to seed data
+        Alert.alert(
+          "No Health Data Found",
+          "We couldn't read data from Apple Health. This can happen if permissions weren't granted or no data is available yet.\n\nWe'll start you off with sample data — you can sync Apple Health anytime from Settings.",
+          [
+            {
+              text: "Continue with sample data",
+              onPress: async () => {
+                try {
+                  await registerAndPostMetrics(seedMetrics);
+                } catch (e2: any) {
+                  const msg = parseErrorMessage(e2);
+                  setError(msg);
+                  Alert.alert("Couldn't finish setup", msg);
+                  setLoading(false);
+                }
+              },
+            },
+          ],
+        );
+        setLoading(false);
+      }
     } catch (e: any) {
       const msg = parseErrorMessage(e);
       setError(msg);
       Alert.alert("Couldn't finish setup", msg);
       setLoading(false);
+    }
+  };
+
+  const isStepValid = (): boolean => {
+    switch (currentStep) {
+      case 0: return true; // Intro — always valid
+      case 1: // Account: email, password, age required
+        return email.trim().length > 0 && password.length >= 8 && age.trim().length > 0;
+      case 2: // Body: height and weight required
+        return height.trim().length > 0 && weight.trim().length > 0;
+      case 3: return true; // Sync — always valid
+      default: return true;
     }
   };
 
@@ -302,9 +337,9 @@ export default function OnboardingScreen() {
       <View style={[s.bottomCta, { paddingBottom: insets.bottom + 16 }]}>
         {error ? <Text style={s.errorText}>{error}</Text> : null}
         <TouchableOpacity
-          style={s.ctaButton}
+          style={[s.ctaButton, (!isStepValid() || loading) && s.ctaButtonDisabled]}
           onPress={handleNext}
-          disabled={loading}
+          disabled={loading || !isStepValid()}
           activeOpacity={0.85}
           testID="button-next"
         >
@@ -389,6 +424,7 @@ const s = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
   },
+  ctaButtonDisabled: { opacity: 0.35 },
   ctaText: { fontFamily: fonts.sansMedium, fontSize: 16, color: colors.white },
   errorText: { fontFamily: fonts.sans, fontSize: 14, color: colors.red500, textAlign: "center", marginBottom: 8 },
   skipButton: { alignItems: "center", paddingVertical: 14 },
