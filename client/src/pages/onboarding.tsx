@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation } from "wouter";
-import { ChevronRight, Apple, Heart, Activity } from "lucide-react";
+import { ChevronRight, Apple, Heart, Activity, Loader2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 const steps = [
   { id: "intro", title: "Welcome to Aura" },
@@ -13,12 +14,55 @@ const steps = [
 export default function Onboarding() {
   const [currentStep, setCurrentStep] = useState(0);
   const [, setLocation] = useLocation();
+  const [age, setAge] = useState<number | "">("");
+  const [sex, setSex] = useState<"male" | "female">("female");
+  const [heightCm, setHeightCm] = useState<number | "">("");
+  const [weightKg, setWeightKg] = useState<number | "">("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleFinish = async () => {
+    if (!age || !heightCm || !weightKg) return;
+    setIsSubmitting(true);
+    try {
+      const userRes = await apiRequest("POST", "/api/users", {
+        age: Number(age),
+        sex,
+        heightCm: Number(heightCm),
+        weightKg: Number(weightKg),
+        onboardingComplete: true,
+      });
+      const user = await userRes.json();
+      const userId = user.id;
+      localStorage.setItem("aura_user_id", String(userId));
+
+      const bmi = Number(weightKg) / Math.pow(Number(heightCm) / 100, 2);
+
+      await apiRequest("POST", `/api/users/${userId}/metrics/batch`, {
+        metrics: [
+          { category: "cardiovascular", metricKey: "resting_hr", value: 58, unit: "bpm" },
+          { category: "cardiovascular", metricKey: "vo2_max", value: 42, unit: "ml/kg/min" },
+          { category: "recovery", metricKey: "hrv", value: 55, unit: "ms" },
+          { category: "sleep", metricKey: "deep_sleep", value: 1.8, unit: "hrs" },
+          { category: "sleep", metricKey: "sleep_duration", value: 7.5, unit: "hrs" },
+          { category: "activity", metricKey: "active_calories", value: 520, unit: "cal" },
+          { category: "activity", metricKey: "exercise_minutes", value: 45, unit: "min" },
+          { category: "body_composition", metricKey: "bmi", value: parseFloat(bmi.toFixed(1)), unit: "kg/m²" },
+        ],
+      });
+
+      setLocation("/");
+    } catch (err) {
+      console.error("Onboarding error:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const nextStep = () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep(curr => curr + 1);
     } else {
-      setLocation("/");
+      handleFinish();
     }
   };
 
@@ -28,8 +72,7 @@ export default function Onboarding() {
         
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.1)_0%,transparent_60%)] pointer-events-none" />
 
-        {/* Progress bar */}
-        <div className="pt-16 px-6 pb-4 flex justify-between gap-2 z-10 relative">
+        <div className="pt-16 px-6 pb-4 flex justify-between gap-2 z-10 relative" data-testid="progress-bar">
           {steps.map((step, idx) => (
             <div key={step.id} className="h-1 flex-1 bg-black/5 rounded-full overflow-hidden">
               <motion.div 
@@ -53,7 +96,7 @@ export default function Onboarding() {
               className="h-full flex flex-col justify-center"
             >
               {currentStep === 0 && (
-                <div className="text-center space-y-6">
+                <div className="text-center space-y-6" data-testid="step-intro">
                   <div className="w-24 h-24 bg-gradient-to-br from-primary to-accent rounded-[32px] mx-auto flex items-center justify-center shadow-lg transform rotate-3">
                     <Heart className="w-10 h-10 text-white" />
                   </div>
@@ -67,7 +110,7 @@ export default function Onboarding() {
               )}
 
               {currentStep === 1 && (
-                <div className="space-y-8">
+                <div className="space-y-8" data-testid="step-basics">
                   <div>
                     <h1 className="font-serif text-3xl mb-2">Let's start with the basics.</h1>
                     <p className="text-muted-foreground">This helps establish your baseline chronological age.</p>
@@ -79,6 +122,9 @@ export default function Onboarding() {
                       <input 
                         type="number" 
                         placeholder="e.g. 32"
+                        value={age}
+                        onChange={(e) => setAge(e.target.value ? Number(e.target.value) : "")}
+                        data-testid="input-age"
                         className="w-full bg-white border border-black/5 rounded-2xl px-5 py-4 text-xl font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm transition-all"
                       />
                     </div>
@@ -86,8 +132,20 @@ export default function Onboarding() {
                     <div className="space-y-3">
                       <label className="text-sm font-medium text-muted-foreground ml-1">Biological Sex</label>
                       <div className="grid grid-cols-2 gap-3">
-                        <button className="bg-primary/10 border border-primary/20 rounded-2xl py-4 font-medium text-foreground">Female</button>
-                        <button className="bg-white border border-black/5 rounded-2xl py-4 font-medium text-muted-foreground shadow-sm">Male</button>
+                        <button
+                          onClick={() => setSex("female")}
+                          data-testid="button-sex-female"
+                          className={`rounded-2xl py-4 font-medium ${sex === "female" ? "bg-primary/10 border border-primary/20 text-foreground" : "bg-white border border-black/5 text-muted-foreground shadow-sm"}`}
+                        >
+                          Female
+                        </button>
+                        <button
+                          onClick={() => setSex("male")}
+                          data-testid="button-sex-male"
+                          className={`rounded-2xl py-4 font-medium ${sex === "male" ? "bg-primary/10 border border-primary/20 text-foreground" : "bg-white border border-black/5 text-muted-foreground shadow-sm"}`}
+                        >
+                          Male
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -95,7 +153,7 @@ export default function Onboarding() {
               )}
 
               {currentStep === 2 && (
-                <div className="space-y-8">
+                <div className="space-y-8" data-testid="step-body">
                   <div>
                     <h1 className="font-serif text-3xl mb-2">Your body composition.</h1>
                     <p className="text-muted-foreground">For more accurate metabolic estimations.</p>
@@ -108,6 +166,9 @@ export default function Onboarding() {
                         <input 
                           type="number" 
                           placeholder="170"
+                          value={heightCm}
+                          onChange={(e) => setHeightCm(e.target.value ? Number(e.target.value) : "")}
+                          data-testid="input-height"
                           className="w-full bg-white border border-black/5 rounded-2xl px-5 py-4 text-xl font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm transition-all"
                         />
                         <span className="absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">cm</span>
@@ -120,6 +181,9 @@ export default function Onboarding() {
                         <input 
                           type="number" 
                           placeholder="65"
+                          value={weightKg}
+                          onChange={(e) => setWeightKg(e.target.value ? Number(e.target.value) : "")}
+                          data-testid="input-weight"
                           className="w-full bg-white border border-black/5 rounded-2xl px-5 py-4 text-xl font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm transition-all"
                         />
                         <span className="absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">kg</span>
@@ -130,7 +194,7 @@ export default function Onboarding() {
               )}
 
               {currentStep === 3 && (
-                <div className="space-y-8 text-center flex flex-col items-center">
+                <div className="space-y-8 text-center flex flex-col items-center" data-testid="step-connect">
                   <div className="w-20 h-20 bg-black rounded-[24px] flex items-center justify-center shadow-lg mb-4">
                     <Apple className="w-10 h-10 text-white" />
                   </div>
@@ -161,10 +225,18 @@ export default function Onboarding() {
         <div className="absolute bottom-8 left-6 right-6 z-20">
           <button 
             onClick={nextStep}
-            className="w-full bg-foreground text-white rounded-full py-4 font-medium text-base hover:bg-foreground/90 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-black/10"
+            disabled={isSubmitting}
+            data-testid="button-next"
+            className="w-full bg-foreground text-white rounded-full py-4 font-medium text-base hover:bg-foreground/90 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-black/10 disabled:opacity-70"
           >
-            {currentStep === 0 ? "Get Started" : currentStep === steps.length - 1 ? "Connect & Finish" : "Continue"}
-            <ChevronRight className="w-4 h-4 opacity-50" />
+            {isSubmitting ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                {currentStep === 0 ? "Get Started" : currentStep === steps.length - 1 ? "Connect & Finish" : "Continue"}
+                <ChevronRight className="w-4 h-4 opacity-50" />
+              </>
+            )}
           </button>
         </div>
 
