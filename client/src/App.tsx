@@ -5,11 +5,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
+import Onboarding from "@/pages/onboarding";
+import Chat from "@/pages/chat";
+import Settings from "@/pages/settings";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home}/>
+      <Route path="/onboarding" component={Onboarding}/>
+      <Route path="/chat" component={Chat}/>
+      <Route path="/settings" component={Settings}/>
       <Route component={NotFound} />
     </Switch>
   );
