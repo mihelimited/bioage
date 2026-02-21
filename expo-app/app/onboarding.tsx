@@ -9,10 +9,11 @@ import {
   Dimensions,
   StyleSheet,
   Animated as RNAnimated,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Heart, ChevronRight, Activity, Loader2 } from "lucide-react-native";
+import { Heart, ChevronRight, Activity } from "lucide-react-native";
 import { colors, fonts, radii } from "@/lib/theme";
 import { apiRequest } from "@/lib/api";
 import { setUserId } from "@/lib/storage";
@@ -36,10 +37,12 @@ export default function OnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new RNAnimated.Value(1)).current;
 
+  const useNative = Platform.OS !== "web";
+
   const animateStep = (next: number) => {
-    RNAnimated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
+    RNAnimated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: useNative }).start(() => {
       setCurrentStep(next);
-      RNAnimated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+      RNAnimated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: useNative }).start();
     });
   };
 

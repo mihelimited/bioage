@@ -18,7 +18,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend Architecture (Expo/React Native)
 - **Framework**: React Native with Expo SDK 54, TypeScript
-- **Routing**: Expo Router (file-based routing) with bottom tabs: Home (`/(tabs)/`), Chat (`/(tabs)/chat`), Settings (`/(tabs)/settings`), plus Onboarding (`/onboarding`)
+- **Routing**: Expo Router (file-based routing) with `Slot` in root layout (not `Stack` — Stack has rendering issues on web), bottom tabs via `Tabs` navigator: Home (`/(tabs)/`), Chat (`/(tabs)/chat`), Settings (`/(tabs)/settings`), plus Onboarding (`/onboarding`)
 - **State Management**: TanStack React Query for server state; local component state via React hooks
 - **Styling**: React Native StyleSheet with custom theme system (`expo-app/src/lib/theme.ts`). Design follows "soft premium wellness" aesthetic with warm neutrals, pastel accents, oversized rounded corners, editorial serif headings (Lora) paired with clean sans-serif body text (DM Sans)
 - **Animations**: React Native Animated API for page transitions

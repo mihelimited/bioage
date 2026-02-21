@@ -1,0 +1,308 @@
+// src/bioage/bioAgeModel.ts
+
+export type Domain = "fitness" | "autonomic" | "circadian" | "sleep" | "mobility";
+
+export interface CircadianFeatures {
+  mesor: number;              // rhythm-adjusted mean (steps/hour proxy)
+  amplitude: number;          // cosinor amplitude
+  acrophaseHour: number;      // peak time 0..24
+  ra: number;                 // relative amplitude 0..1
+  is: number;                 // interdaily stability ~0..1
+  iv: number;                 // intradaily variability (>0, lower better)
+  stepsCoverage: number;      // 0..1 fraction of hourly bins that had data
+}
+
+export interface WearableFeatures {
+  // Autonomic
+  restingHR_bpm?: number;
+  hrvSDNN_ms?: number;
+  hrvCV?: number;
+
+  // Fitness
+  vo2max_mlKgMin?: number;
+  vo2maxSlope_mlKgMinPerWeek?: number;
+  vo2SampleCount?: number;
+
+  // Sleep (30-day)
+  sleepAvgHours?: number;
+  sleepEfficiency_pct?: number;
+  sleepMidpointCircularStd_hours?: number;
+  sleepNightsCount?: number;
+
+  // Mobility
+  walkingSpeed_mps?: number;
+
+  // Circadian
+  circadian?: CircadianFeatures;
+}
+
+export interface BioAgeConfig {
+  weights: Record<Domain, number>;
+  shrinkageLambda: number;
+
+  // Priors / references (tune or replace with trained values later)
+  rhrRef_bpm: number;
+  rhrScale_bpm: number;
+  rhrYearsPerZ: number;
+
+  hrvRef_ms: number;
+  hrvLogScale: number;
+  hrvYearsPerZ: number;
+
+  hrvCVRef: number;
+  hrvCVScale: number;
+  hrvCVYearsPerZ: number;
+
+  vo2Ref_mlKgMin: number;
+  vo2Scale_mlKgMin: number;
+  vo2YearsPerZ: number;
+
+  walkSpeedRef_mps: number;
+  walkSpeedScale_mps: number;
+  walkSpeedYearsPerZ: number;
+
+  sleepRefHours: number;
+  sleepRefEfficiencyPct: number;
+  sleepRefMidpointStdHours: number;
+  sleepYearsPerHour: number;
+  sleepYearsPerEffPct: number;
+  sleepYearsPerMidpointStdHour: number;
+
+  circadianTargetScore: number;
+  circadianYearsPerScorePoint: number;
+
+  perDomainClampYears: [number, number];
+}
+
+export interface BioAgeResult {
+  windowStart: Date;
+  windowEnd: Date;
+
+  chronologicalAgeYears: number;
+  biologicalAgeYears: number;
+  ageGapYears: number;
+
+  domainGaps: Partial<Record<Domain, number>>;
+  domainWeightsUsed: Partial<Record<Domain, number>>;
+  domainQuality: Record<Domain, number>;
+}
+
+export const defaultBioAgeConfig: BioAgeConfig = {
+  weights: {
+    fitness: 0.30,
+    circadian: 0.25,
+    autonomic: 0.20,
+    sleep: 0.15,
+    mobility: 0.10,
+  },
+  shrinkageLambda: 0.70,
+
+  rhrRef_bpm: 60,
+  rhrScale_bpm: 8,
+  rhrYearsPerZ: 2.5,
+
+  hrvRef_ms: 55,
+  hrvLogScale: 0.35,
+  hrvYearsPerZ: 2.5,
+
+  hrvCVRef: 0.45,
+  hrvCVScale: 0.20,
+  hrvCVYearsPerZ: 1.5,
+
+  vo2Ref_mlKgMin: 40,
+  vo2Scale_mlKgMin: 7.5,
+  vo2YearsPerZ: 4.0,
+
+  walkSpeedRef_mps: 1.30,
+  walkSpeedScale_mps: 0.20,
+  walkSpeedYearsPerZ: 2.5,
+
+  sleepRefHours: 7.0,
+  sleepRefEfficiencyPct: 85.0,
+  sleepRefMidpointStdHours: 1.0,
+
+  sleepYearsPerHour: 0.09,
+  sleepYearsPerEffPct: 0.05,
+  sleepYearsPerMidpointStdHour: 0.30,
+
+  circadianTargetScore: 0.55,
+  circadianYearsPerScorePoint: 12.0,
+
+  perDomainClampYears: [-12, 12],
+};
+
+const DOMAINS: Domain[] = ["fitness", "circadian", "autonomic", "sleep", "mobility"];
+
+export function estimateBioAge(
+  chronologicalAgeYears: number,
+  features: WearableFeatures,
+  windowStart: Date,
+  windowEnd: Date,
+  config: BioAgeConfig = defaultBioAgeConfig
+): BioAgeResult {
+  const gaps: Partial<Record<Domain, number>> = {
+    fitness: gapFitness(features, config),
+    autonomic: gapAutonomic(features, config),
+    circadian: gapCircadian(features, config),
+    sleep: gapSleep(features, config),
+    mobility: gapMobility(features, config),
+  };
+
+  // Drop missing gaps
+  for (const d of DOMAINS) {
+    if (!Number.isFinite(gaps[d] as number)) delete gaps[d];
+  }
+
+  const quality: Record<Domain, number> = {
+    fitness: qualityFitness(features),
+    autonomic: qualityAutonomic(features),
+    circadian: qualityCircadian(features),
+    sleep: qualitySleep(features),
+    mobility: qualityMobility(features),
+  };
+
+  // Quality-gated weights
+  const gatedWeights: Partial<Record<Domain, number>> = {};
+  for (const d of DOMAINS) {
+    if (gaps[d] === undefined) continue;
+    gatedWeights[d] = (config.weights[d] ?? 0) * clamp(quality[d], 0, 1);
+  }
+
+  const wSum = Object.values(gatedWeights).reduce((a, b) => a + (b ?? 0), 0);
+  const weightsUsed: Partial<Record<Domain, number>> = {};
+  if (wSum > 0) {
+    for (const d of DOMAINS) {
+      const w = gatedWeights[d];
+      if (w !== undefined) weightsUsed[d] = w / wSum;
+    }
+  }
+
+  // Blended gap then shrinkage
+  let blendedGap = 0;
+  for (const d of DOMAINS) {
+    const w = weightsUsed[d];
+    const g = gaps[d];
+    if (w !== undefined && g !== undefined) blendedGap += w * g;
+  }
+  blendedGap *= config.shrinkageLambda;
+
+  const biologicalAgeYears = chronologicalAgeYears + blendedGap;
+
+  return {
+    windowStart,
+    windowEnd,
+    chronologicalAgeYears,
+    biologicalAgeYears,
+    ageGapYears: biologicalAgeYears - chronologicalAgeYears,
+    domainGaps: gaps,
+    domainWeightsUsed: weightsUsed,
+    domainQuality: quality,
+  };
+}
+
+// ------------------------- Domain gaps -------------------------
+
+function gapFitness(f: WearableFeatures, c: BioAgeConfig): number | undefined {
+  if (f.vo2max_mlKgMin == null) return undefined;
+  const z = zScore(f.vo2max_mlKgMin, c.vo2Ref_mlKgMin, c.vo2Scale_mlKgMin);
+  const delta = -c.vo2YearsPerZ * z;
+  return clamp(delta, c.perDomainClampYears[0], c.perDomainClampYears[1]);
+}
+
+function gapAutonomic(f: WearableFeatures, c: BioAgeConfig): number | undefined {
+  const parts: number[] = [];
+
+  if (f.restingHR_bpm != null) {
+    const z = zScore(f.restingHR_bpm, c.rhrRef_bpm, c.rhrScale_bpm);
+    parts.push(+c.rhrYearsPerZ * z);
+  }
+
+  if (f.hrvSDNN_ms != null && f.hrvSDNN_ms > 0) {
+    const logHRV = Math.log(f.hrvSDNN_ms);
+    const logRef = Math.log(c.hrvRef_ms);
+    const z = zScore(logHRV, logRef, c.hrvLogScale);
+    parts.push(-c.hrvYearsPerZ * z);
+  }
+
+  if (f.hrvCV != null) {
+    const z = zScore(f.hrvCV, c.hrvCVRef, c.hrvCVScale);
+    parts.push(+c.hrvCVYearsPerZ * z);
+  }
+
+  if (parts.length === 0) return undefined;
+  const delta = parts.reduce((a, b) => a + b, 0);
+  return clamp(delta, c.perDomainClampYears[0], c.perDomainClampYears[1]);
+}
+
+function gapSleep(f: WearableFeatures, c: BioAgeConfig): number | undefined {
+  if (f.sleepAvgHours == null) return undefined;
+
+  let delta = 0;
+  delta += -c.sleepYearsPerHour * (f.sleepAvgHours - c.sleepRefHours);
+
+  if (f.sleepEfficiency_pct != null) {
+    delta += -c.sleepYearsPerEffPct * (f.sleepEfficiency_pct - c.sleepRefEfficiencyPct);
+  }
+
+  if (f.sleepMidpointCircularStd_hours != null) {
+    delta += +c.sleepYearsPerMidpointStdHour * (f.sleepMidpointCircularStd_hours - c.sleepRefMidpointStdHours);
+  }
+
+  return clamp(delta, c.perDomainClampYears[0], c.perDomainClampYears[1]);
+}
+
+function gapMobility(f: WearableFeatures, c: BioAgeConfig): number | undefined {
+  if (f.walkingSpeed_mps == null) return undefined;
+  const z = zScore(f.walkingSpeed_mps, c.walkSpeedRef_mps, c.walkSpeedScale_mps);
+  const delta = -c.walkSpeedYearsPerZ * z;
+  return clamp(delta, c.perDomainClampYears[0], c.perDomainClampYears[1]);
+}
+
+function gapCircadian(f: WearableFeatures, c: BioAgeConfig): number | undefined {
+  const circ = f.circadian;
+  if (!circ) return undefined;
+
+  const ivScore = 1 / (1 + Math.max(0, circ.iv));
+  const score =
+    0.45 * clamp(circ.ra, 0, 1) +
+    0.35 * clamp(circ.is, 0, 1) +
+    0.20 * clamp(ivScore, 0, 1);
+
+  const delta = (c.circadianTargetScore - score) * c.circadianYearsPerScorePoint;
+  return clamp(delta, c.perDomainClampYears[0], c.perDomainClampYears[1]);
+}
+
+// ------------------------- Quality gates -------------------------
+
+function qualityFitness(f: WearableFeatures): number {
+  if (f.vo2max_mlKgMin == null) return 0;
+  const n = f.vo2SampleCount ?? 0;
+  return clamp(n / 3, 0, 1);
+}
+function qualityAutonomic(f: WearableFeatures): number {
+  const hasRHR = f.restingHR_bpm != null ? 1 : 0;
+  const hasHRV = f.hrvSDNN_ms != null ? 1 : 0;
+  const hasCV = f.hrvCV != null ? 0.5 : 0;
+  return clamp((hasRHR + hasHRV + hasCV) / 2.5, 0, 1);
+}
+function qualitySleep(f: WearableFeatures): number {
+  if (f.sleepAvgHours == null) return 0;
+  const n = f.sleepNightsCount ?? 0;
+  return clamp(n / 14, 0, 1);
+}
+function qualityMobility(f: WearableFeatures): number {
+  return f.walkingSpeed_mps != null ? 1 : 0;
+}
+function qualityCircadian(f: WearableFeatures): number {
+  return clamp(f.circadian?.stepsCoverage ?? 0, 0, 1);
+}
+
+// ------------------------- small helpers -------------------------
+
+function zScore(x: number, ref: number, scale: number): number {
+  return scale > 0 ? (x - ref) / scale : 0;
+}
+
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.min(Math.max(x, lo), hi);
+}
