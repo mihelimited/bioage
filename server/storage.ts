@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import {
   users, healthMetrics, bioAgeSnapshots, conversations, messages,
   type User, type InsertUser,
@@ -47,12 +47,18 @@ class DatabaseStorage implements IStorage {
   }
 
   async getLatestMetrics(userId: number): Promise<HealthMetric[]> {
-    return db.execute(sql`
-      SELECT DISTINCT ON (metric_key) *
-      FROM health_metrics
-      WHERE user_id = ${userId}
-      ORDER BY metric_key, recorded_at DESC
-    `) as any as HealthMetric[];
+    const allMetrics = await db.select().from(healthMetrics)
+      .where(eq(healthMetrics.userId, userId))
+      .orderBy(desc(healthMetrics.recordedAt));
+    const seen = new Set<string>();
+    const latest: HealthMetric[] = [];
+    for (const m of allMetrics) {
+      if (!seen.has(m.metricKey)) {
+        seen.add(m.metricKey);
+        latest.push(m);
+      }
+    }
+    return latest;
   }
 
   async getMetricHistory(userId: number, metricKey: string, limit = 30): Promise<HealthMetric[]> {
