@@ -90,9 +90,6 @@ export default function Home() {
                     <h1 className="font-serif text-4xl leading-[1.15] text-foreground">
                       Your body is<br />feeling younger.
                     </h1>
-                    <p className="text-muted-foreground text-sm max-w-[280px]">
-                      Target: 25.0 • Chronological: 32.0
-                    </p>
                   </div>
 
                   {/* BioAge Hero */}
