@@ -63,17 +63,14 @@ export default function OnboardingScreen() {
       const user = await res.json();
       await setUserId(user.id);
 
-      const bmi = weightKg / Math.pow(heightCm / 100, 2);
       await apiRequest("POST", `/api/users/${user.id}/metrics/batch`, {
         metrics: [
-          { category: "cardiovascular", metricKey: "resting_hr", value: 58, unit: "bpm" },
-          { category: "cardiovascular", metricKey: "vo2_max", value: 42, unit: "ml/kg/min" },
-          { category: "recovery", metricKey: "hrv", value: 55, unit: "ms" },
-          { category: "sleep", metricKey: "deep_sleep", value: 1.8, unit: "hrs" },
+          { category: "autonomic", metricKey: "resting_hr", value: 58, unit: "bpm" },
+          { category: "autonomic", metricKey: "hrv", value: 55, unit: "ms" },
+          { category: "fitness", metricKey: "vo2_max", value: 42, unit: "ml/kg/min" },
           { category: "sleep", metricKey: "sleep_duration", value: 7.5, unit: "hrs" },
-          { category: "activity", metricKey: "active_calories", value: 520, unit: "cal" },
-          { category: "activity", metricKey: "exercise_minutes", value: 45, unit: "min" },
-          { category: "body_composition", metricKey: "bmi", value: Math.round(bmi * 10) / 10, unit: "kg/m²" },
+          { category: "sleep", metricKey: "sleep_efficiency", value: 88, unit: "%" },
+          { category: "mobility", metricKey: "walking_speed", value: 1.35, unit: "m/s" },
         ],
       });
 

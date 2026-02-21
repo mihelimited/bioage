@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertHealthMetricSchema } from "@shared/schema";
-import { calculateBioAge, ALL_METRIC_KEYS, CATEGORIES, getCategoryLabel } from "./bioage";
+import { calculateBioAge, ALL_DOMAINS, DOMAIN_LABELS, type Domain } from "./bioage";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -94,14 +94,14 @@ export async function registerRoutes(
       bioAge: result.bioAge,
       chronologicalAge: result.chronologicalAge,
       paceOfAging: result.paceOfAging,
-      categoryBreakdown: result.categories,
+      categoryBreakdown: result.domains,
     });
 
-    const missingCategories = CATEGORIES.filter(
-      c => !result.categories.find(rc => rc.category === c)
-    ).map(c => ({ category: c, label: getCategoryLabel(c) }));
+    const missingDomains = ALL_DOMAINS.filter(
+      d => !result.domains.find(rd => rd.domain === d)
+    ).map(d => ({ domain: d, label: DOMAIN_LABELS[d] }));
 
-    res.json({ ...result, missingCategories, target: user.bioAgeTarget });
+    res.json({ ...result, missingDomains, target: user.bioAgeTarget });
   });
 
   app.get("/api/users/:id/bioage/history", async (req, res) => {
@@ -150,18 +150,19 @@ export async function registerRoutes(
         content: m.content,
       }));
 
-      const systemPrompt = `You are Aura, a warm and knowledgeable wellness AI assistant inside a biological age tracking app. 
+      const systemPrompt = `You are Aura, a warm and knowledgeable wellness AI assistant inside a biological age tracking app.
 The user's profile:
 - Chronological age: ${user!.age}
 - Sex: ${user!.sex}
 - Height: ${user!.heightCm}cm, Weight: ${user!.weightKg}kg
 - Current bio-age: ${bioAgeResult.bioAge} (${bioAgeResult.bioAge < user!.age ? "younger" : "older"} than actual)
 - Pace of aging: ${bioAgeResult.paceOfAging} years per year
+- Age gap: ${bioAgeResult.ageGap} years
 - Bio-age target: ${user!.bioAgeTarget || "not set"}
 
-Their health data breakdown:
-${bioAgeResult.categories.map(c => `${getCategoryLabel(c.category)}: ${c.impact > 0 ? "+" : ""}${c.impact} yrs impact
-  ${c.metrics.map(m => `- ${m.key}: ${m.value} ${m.unit} (${m.impact > 0 ? "+" : ""}${m.impact} yrs, ${m.fresh ? "fresh" : "stale data"}${m.isOverride ? ", lab-verified" : ""})`).join("\n  ")}`).join("\n")}
+Their health data by domain:
+${bioAgeResult.domains.map(d => `${DOMAIN_LABELS[d.domain]}: gap ${d.gap > 0 ? "+" : ""}${d.gap} yrs (quality: ${Math.round(d.quality * 100)}%, weight: ${Math.round(d.weight * 100)}%)
+  ${d.metrics.map(m => `- ${m.key}: ${m.value} ${m.unit} (${m.fresh ? "fresh" : "stale data"}${m.isOverride ? ", lab-verified" : ""})`).join("\n  ")}`).join("\n")}
 
 Guidelines:
 - Give specific, actionable advice based on their actual metrics
@@ -223,12 +224,8 @@ Guidelines:
   });
 
   // ─── Meta ───
-  app.get("/api/meta/categories", (_req, res) => {
-    res.json(CATEGORIES.map(c => ({ key: c, label: getCategoryLabel(c) })));
-  });
-
-  app.get("/api/meta/metrics", (_req, res) => {
-    res.json(ALL_METRIC_KEYS);
+  app.get("/api/meta/domains", (_req, res) => {
+    res.json(ALL_DOMAINS.map(d => ({ key: d, label: DOMAIN_LABELS[d] })));
   });
 
   return httpServer;

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Aura is a biological age tracking and wellness application that calculates a user's "bio-age" based on health metrics (heart rate, VO2 max, HRV, sleep, activity, body composition). It presents this data through a soft, premium wellness-styled mobile-first UI with an AI-powered chat assistant for personalized health insights.
+Aura is a biological age tracking and wellness application that calculates a user's "bio-age" using a domain-based algorithm across 5 wellness domains (fitness, autonomic, circadian, sleep, mobility). It uses z-score deviations, quality-gated weights, and shrinkage regularization for scientifically-grounded results. The app presents data through a soft, premium wellness-styled mobile-first UI with an AI-powered chat assistant for personalized health insights.
 
 The app follows a monorepo structure with these main directories:
 - `expo-app/` — React Native/Expo frontend (file-based routing via Expo Router)
@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
   - `GET /api/users/:id/bioage` — Bio-age calculation
   - `POST/GET/DELETE /api/users/:id/conversations` — AI chat conversations
   - `POST /api/users/:id/conversations/:cid/messages` — Chat messages with SSE streaming
-- **Bio-Age Engine**: Custom algorithm in `server/bioage.ts` that computes biological age offset from chronological age based on health metrics across categories (cardiovascular, sleep, recovery, activity, body composition). Each metric has optimal ranges and maximum impact values.
+- **Bio-Age Engine**: Custom algorithm in `server/bioage.ts` that computes biological age offset from chronological age based on health metrics across 5 domains (fitness, autonomic, circadian, sleep, mobility). Uses z-score deviations from population references, quality-gated weights based on data availability, and shrinkage regularization (lambda=0.70) to prevent overfitting. Each domain is clamped to [-12, +12] years max impact.
 - **AI Integration**: OpenAI API (via Replit AI Integrations) for the wellness chat assistant. Uses environment variables `AI_INTEGRATIONS_OPENAI_API_KEY` and `AI_INTEGRATIONS_OPENAI_BASE_URL`.
 - **Development**: Express on port 5000 proxies non-API requests to Expo Metro bundler on port 8081 (via `server/expo-proxy.ts`). CORS middleware enables cross-origin requests.
 

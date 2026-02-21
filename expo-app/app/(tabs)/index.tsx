@@ -7,21 +7,21 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import Svg, { Path } from "react-native-svg";
 import {
-  HeartPulse, Activity, Moon, Flame, Droplets, ChevronRight,
+  HeartPulse, Activity, Moon, Zap, Footprints, ChevronRight,
   TrendingDown, TrendingUp, Sparkles, Share2, AlertCircle,
-  CheckCircle2, Clock, ShieldCheck,
+  CheckCircle2, Clock,
 } from "lucide-react-native";
 import { colors, fonts, radii } from "@/lib/theme";
 import { apiGet } from "@/lib/api";
 import { getUserId } from "@/lib/storage";
 import { router } from "expo-router";
 
-const CATEGORY_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
-  cardiovascular: { icon: HeartPulse, color: colors.rose500, bg: colors.rose50, label: "Cardiovascular" },
-  sleep: { icon: Moon, color: colors.indigo500, bg: colors.indigo50, label: "Sleep" },
-  recovery: { icon: Droplets, color: colors.blue500, bg: colors.blue50, label: "Recovery" },
-  activity: { icon: Flame, color: colors.orange500, bg: colors.orange50, label: "Activity" },
-  body_composition: { icon: Activity, color: colors.emerald500, bg: colors.emerald50, label: "Body Composition" },
+const DOMAIN_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  fitness: { icon: Activity, color: colors.orange500, bg: colors.orange50, label: "Fitness" },
+  autonomic: { icon: HeartPulse, color: colors.rose500, bg: colors.rose50, label: "Autonomic" },
+  circadian: { icon: Zap, color: colors.indigo500, bg: colors.indigo50, label: "Circadian" },
+  sleep: { icon: Moon, color: colors.blue500, bg: colors.blue50, label: "Sleep" },
+  mobility: { icon: Footprints, color: colors.emerald500, bg: colors.emerald50, label: "Mobility" },
 };
 
 export default function HomeScreen() {
@@ -65,7 +65,7 @@ export default function HomeScreen() {
   const paceOfAging = bioage?.paceOfAging ?? 1;
   const bioAgeValue = bioage?.bioAge ?? 0;
   const chronAge = bioage?.chronologicalAge ?? 0;
-  const diff = Math.round((bioAgeValue - chronAge) * 10) / 10;
+  const ageGap = bioage?.ageGap ?? 0;
   const bioAgeInt = Math.floor(bioAgeValue);
   const bioAgeDec = Math.round((bioAgeValue - bioAgeInt) * 10);
   const isYounger = paceOfAging < 1;
@@ -134,8 +134,8 @@ export default function HomeScreen() {
                 <Text style={s.heroAgeDec}>.{bioAgeDec}</Text>
               </View>
               <Text style={s.heroDiff}>
-                <Text style={{ color: diff < 0 ? colors.green600 : colors.destructive, fontFamily: fonts.sansBold }}>
-                  {diff > 0 ? "+" : ""}{diff} years
+                <Text style={{ color: ageGap < 0 ? colors.green600 : colors.destructive, fontFamily: fonts.sansBold }}>
+                  {ageGap > 0 ? "+" : ""}{ageGap} years
                 </Text>
                 {" "}vs actual age
               </Text>
@@ -145,33 +145,36 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={s.sectionTitle}>Contributing Factors</Text>
-            {bioage?.categories?.map((cat: any) => {
-              const config = CATEGORY_CONFIG[cat.category] || CATEGORY_CONFIG.activity;
+            <Text style={s.sectionTitle}>Domain Breakdown</Text>
+            {bioage?.domains?.map((dom: any) => {
+              const config = DOMAIN_CONFIG[dom.domain] || DOMAIN_CONFIG.fitness;
               const Icon = config.icon;
               return (
-                <View key={cat.category} style={s.categoryCard}>
+                <View key={dom.domain} style={s.categoryCard}>
                   <View style={s.categoryHeader}>
                     <View style={s.categoryLeft}>
                       <View style={[s.categoryIcon, { backgroundColor: config.bg }]}>
                         <Icon size={16} color={config.color} />
                       </View>
-                      <Text style={s.categoryName}>{config.label}</Text>
+                      <View>
+                        <Text style={s.categoryName}>{config.label}</Text>
+                        <Text style={s.qualityText}>
+                          Quality: {Math.round(dom.quality * 100)}%
+                        </Text>
+                      </View>
                     </View>
                     <Text
-                      style={[s.categoryImpact, { color: cat.impact < 0 ? colors.green600 : colors.destructive }]}
+                      style={[s.categoryImpact, { color: dom.gap < 0 ? colors.green600 : dom.gap > 0 ? colors.destructive : colors.mutedForeground }]}
                     >
-                      {cat.impact > 0 ? "+" : ""}{cat.impact} yrs
+                      {dom.gap > 0 ? "+" : ""}{dom.gap} yrs
                     </Text>
                   </View>
                   <View style={s.metricsGrid}>
-                    {cat.metrics?.map((m: any) => (
+                    {dom.metrics?.map((m: any) => (
                       <View key={m.key} style={s.metricTile}>
                         <View style={s.metricHeader}>
                           <Text style={s.metricLabel}>{m.key.replace(/_/g, " ")}</Text>
-                          {m.isOverride ? (
-                            <ShieldCheck size={14} color={colors.blue500} />
-                          ) : m.fresh ? (
+                          {m.fresh ? (
                             <CheckCircle2 size={14} color={colors.green500} />
                           ) : (
                             <AlertCircle size={14} color={colors.orange400} />
@@ -188,14 +191,14 @@ export default function HomeScreen() {
               );
             })}
 
-            {bioage?.missingCategories?.map((mc: any) => (
-              <View key={mc.category} style={[s.categoryCard, { opacity: 0.6 }]}>
+            {bioage?.missingDomains?.map((md: any) => (
+              <View key={md.domain} style={[s.categoryCard, { opacity: 0.6 }]}>
                 <View style={s.categoryHeader}>
                   <View style={s.categoryLeft}>
                     <View style={[s.categoryIcon, { backgroundColor: colors.gray100 }]}>
                       <Clock size={16} color={colors.gray600} />
                     </View>
-                    <Text style={s.categoryName}>{mc.label}</Text>
+                    <Text style={s.categoryName}>{md.label}</Text>
                   </View>
                   <Text style={[s.categoryImpact, { color: colors.mutedForeground }]}>Need data</Text>
                 </View>
@@ -246,17 +249,17 @@ export default function HomeScreen() {
         <Pressable style={s.overlay} onPress={() => setShowInsight(false)}>
           <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Calculation Impact</Text>
+            <Text style={s.sheetTitle}>Domain Impact</Text>
             <View style={s.sheetRows}>
               <View style={s.sheetRow}>
                 <Text style={s.sheetLabel}>Chronological Age</Text>
                 <Text style={s.sheetValue}>{chronAge}</Text>
               </View>
-              {bioage?.categories?.map((cat: any) => (
-                <View key={cat.category} style={s.sheetRow}>
-                  <Text style={s.sheetLabel}>{CATEGORY_CONFIG[cat.category]?.label || cat.category}</Text>
-                  <Text style={[s.sheetValue, { color: cat.impact < 0 ? colors.green600 : colors.destructive }]}>
-                    {cat.impact > 0 ? "+" : ""}{cat.impact} yrs
+              {bioage?.domains?.map((dom: any) => (
+                <View key={dom.domain} style={s.sheetRow}>
+                  <Text style={s.sheetLabel}>{DOMAIN_CONFIG[dom.domain]?.label || dom.domain}</Text>
+                  <Text style={[s.sheetValue, { color: dom.gap < 0 ? colors.green600 : dom.gap > 0 ? colors.destructive : colors.foreground }]}>
+                    {dom.gap > 0 ? "+" : ""}{dom.gap} yrs
                   </Text>
                 </View>
               ))}
@@ -306,14 +309,13 @@ const s = StyleSheet.create({
   logoBox: {
     width: 32, height: 32, borderRadius: 12, backgroundColor: colors.card,
     justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: colors.white, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+    borderWidth: 1, borderColor: colors.white,
   },
   logoText: { fontFamily: fonts.serif, fontSize: 18, color: colors.foreground },
   shareButton: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.white,
     borderWidth: 1, borderColor: "rgba(0,0,0,0.05)",
     justifyContent: "center", alignItems: "center",
-    shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
   },
   tabRow: {
     flexDirection: "row", backgroundColor: "rgba(240,237,232,0.5)", borderRadius: 32,
@@ -323,7 +325,7 @@ const s = StyleSheet.create({
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 8, paddingVertical: 12, borderRadius: 28,
   },
-  tabActive: { backgroundColor: colors.card, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  tabActive: { backgroundColor: colors.card },
   tabText: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.mutedForeground },
   tabTextActive: { color: colors.foreground },
   section: { gap: 16 },
@@ -337,7 +339,6 @@ const s = StyleSheet.create({
   heroCard: {
     backgroundColor: colors.card, borderRadius: 36, padding: 32, alignItems: "center",
     borderWidth: 1, borderColor: colors.white,
-    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 12, elevation: 4,
   },
   heroLabel: {
     fontFamily: fonts.sansMedium, fontSize: 12, color: colors.mutedForeground,
@@ -357,12 +358,12 @@ const s = StyleSheet.create({
   categoryCard: {
     backgroundColor: colors.white, borderRadius: 28, padding: 20,
     borderWidth: 1, borderColor: "rgba(0,0,0,0.05)",
-    shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
   },
   categoryHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   categoryLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   categoryIcon: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
   categoryName: { fontFamily: fonts.sansMedium, fontSize: 15, color: colors.foreground },
+  qualityText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
   categoryImpact: { fontFamily: fonts.sansMedium, fontSize: 14 },
   metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metricTile: {
@@ -377,14 +378,12 @@ const s = StyleSheet.create({
   trendChart: {
     backgroundColor: colors.card, borderRadius: 36, padding: 24,
     borderWidth: 1, borderColor: colors.white, height: 240, justifyContent: "center",
-    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 12, elevation: 4,
   },
   noHistory: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.mutedForeground, textAlign: "center" },
   overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.1)" },
   sheet: {
     backgroundColor: "rgba(255,255,255,0.95)", borderTopLeftRadius: 36, borderTopRightRadius: 36,
     padding: 32, paddingBottom: 40,
-    shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 20, elevation: 10,
   },
   sheetHandle: {
     width: 48, height: 6, borderRadius: 3, backgroundColor: "rgba(0,0,0,0.1)",

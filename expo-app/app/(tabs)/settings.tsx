@@ -57,9 +57,9 @@ export default function SettingsScreen() {
     setSavingOverrides(true);
     try {
       const metrics = [];
-      if (vo2Input) metrics.push({ category: "cardiovascular", metricKey: "vo2_max", value: parseFloat(vo2Input), unit: "ml/kg/min", isOverride: true });
-      if (hrInput) metrics.push({ category: "cardiovascular", metricKey: "resting_hr", value: parseFloat(hrInput), unit: "bpm", isOverride: true });
-      if (hrvInput) metrics.push({ category: "recovery", metricKey: "hrv", value: parseFloat(hrvInput), unit: "ms", isOverride: true });
+      if (vo2Input) metrics.push({ category: "fitness", metricKey: "vo2_max", value: parseFloat(vo2Input), unit: "ml/kg/min", isOverride: true });
+      if (hrInput) metrics.push({ category: "autonomic", metricKey: "resting_hr", value: parseFloat(hrInput), unit: "bpm", isOverride: true });
+      if (hrvInput) metrics.push({ category: "autonomic", metricKey: "hrv", value: parseFloat(hrvInput), unit: "ms", isOverride: true });
       for (const m of metrics) {
         await apiRequest("POST", `/api/users/${userId}/metrics`, m);
       }
