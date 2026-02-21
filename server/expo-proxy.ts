@@ -11,11 +11,11 @@ export async function setupExpoProxy(server: Server, app: Express) {
 
   expoProcess = spawn(
     "npx",
-    ["expo", "start", "--web", "--port", String(EXPO_PORT)],
+    ["expo", "start", "--web", "--port", String(EXPO_PORT), "--tunnel"],
     {
       cwd: path.resolve(import.meta.dirname, "..", "expo-app"),
       stdio: "pipe",
-      env: { ...process.env, BROWSER: "none", CI: "1" },
+      env: { ...process.env, BROWSER: "none" },
     }
   );
 
