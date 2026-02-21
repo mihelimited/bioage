@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Heart, ChevronRight, Activity } from "lucide-react-native";
 import { colors, fonts, radii } from "@/lib/theme";
 import { apiRequest } from "@/lib/api";
-import { setUserId } from "@/lib/storage";
+import { setAuth } from "@/lib/storage";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -30,6 +30,8 @@ const steps = [
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(0);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [age, setAge] = useState("");
   const [sex, setSex] = useState<"male" | "female">("female");
   const [height, setHeight] = useState("");
@@ -53,15 +55,17 @@ export default function OnboardingScreen() {
       const weightKg = parseFloat(weight) || 65;
       const userAge = parseInt(age) || 30;
 
-      const res = await apiRequest("POST", "/api/users", {
+      const res = await apiRequest("POST", "/api/auth/register", {
+        email: email.trim().toLowerCase(),
+        password,
         age: userAge,
         sex,
         heightCm,
         weightKg,
         onboardingComplete: true,
       });
-      const user = await res.json();
-      await setUserId(user.id);
+      const { user, token } = await res.json();
+      await setAuth(user.id, token);
 
       await apiRequest("POST", `/api/users/${user.id}/metrics/batch`, {
         metrics: [
@@ -114,8 +118,35 @@ export default function OnboardingScreen() {
 
         {currentStep === 1 && (
           <View style={s.formContent}>
-            <Text style={s.stepTitle}>Let's start with the basics.</Text>
-            <Text style={s.stepSubtitle}>This helps establish your baseline chronological age.</Text>
+            <Text style={s.stepTitle}>Create your account.</Text>
+            <Text style={s.stepSubtitle}>We'll use this to keep your data safe.</Text>
+            <View style={s.fieldGroup}>
+              <Text style={s.label}>Email</Text>
+              <TextInput
+                style={s.input}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                placeholder="you@example.com"
+                placeholderTextColor={colors.mutedForeground}
+                value={email}
+                onChangeText={setEmail}
+                testID="input-email"
+              />
+            </View>
+            <View style={s.fieldGroup}>
+              <Text style={s.label}>Password</Text>
+              <TextInput
+                style={s.input}
+                secureTextEntry
+                autoComplete="new-password"
+                placeholder="8+ characters"
+                placeholderTextColor={colors.mutedForeground}
+                value={password}
+                onChangeText={setPassword}
+                testID="input-password"
+              />
+            </View>
             <View style={s.fieldGroup}>
               <Text style={s.label}>Chronological Age</Text>
               <TextInput

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Redirect } from "expo-router";
-import { getUserId, clearUserId } from "@/lib/storage";
+import { getUserId, getAuthToken, clearAuth } from "@/lib/storage";
 import { apiGet } from "@/lib/api";
 import { colors } from "@/lib/theme";
 
@@ -10,22 +10,26 @@ export default function Index() {
   const [userId, setUserIdState] = useState<number | null>(null);
 
   useEffect(() => {
-    getUserId()
-      .then(async (id) => {
-        if (id) {
+    (async () => {
+      try {
+        const id = await getUserId();
+        const token = await getAuthToken();
+        if (id && token) {
           try {
             await apiGet(`/api/users/${id}`);
             setUserIdState(id);
           } catch {
-            await clearUserId();
-            setUserIdState(null);
+            await clearAuth();
           }
+        } else if (id && !token) {
+          // Legacy user without token — force re-auth
+          await clearAuth();
         }
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
+      } catch {
+        // ignore
+      }
+      setLoading(false);
+    })();
   }, []);
 
   if (loading) {

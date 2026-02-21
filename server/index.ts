@@ -22,12 +22,18 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+const ALLOWED_ORIGINS = new Set([
+  "http://localhost:5000",
+  "http://localhost:8081",
+  "https://vitality-score.replit.app",
+]);
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
     res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);
     }

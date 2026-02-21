@@ -9,7 +9,7 @@ import { router } from "expo-router";
 import { Target, Bell, ShieldAlert, ChevronRight, Activity, Heart, RefreshCw } from "lucide-react-native";
 import { colors, fonts } from "@/lib/theme";
 import { apiGet, apiRequest } from "@/lib/api";
-import { getUserId, clearUserId } from "@/lib/storage";
+import { getUserId, clearAuth } from "@/lib/storage";
 import { isHealthKitAvailable, syncHealthData, getLastSyncTime } from "@/lib/healthkit";
 
 function formatTimeSince(isoDate: string): string {
@@ -129,7 +129,7 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = async () => {
-    await clearUserId();
+    await clearAuth();
     router.replace("/onboarding");
   };
 

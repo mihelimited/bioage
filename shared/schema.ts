@@ -5,6 +5,8 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
+  email: text("email").unique(),
+  passwordHash: text("password_hash"),
   age: integer("age").notNull(),
   sex: text("sex").notNull(),
   heightCm: real("height_cm"),
@@ -51,8 +53,21 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
-export const insertHealthMetricSchema = createInsertSchema(healthMetrics).omit({ id: true, recordedAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, passwordHash: true });
+export const registerUserSchema = insertUserSchema.extend({
+  email: z.string().email(),
+  password: z.string().min(8),
+}).omit({ email: true }).extend({ email: z.string().email() });
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+export const insertHealthMetricSchema = createInsertSchema(healthMetrics).omit({ id: true, recordedAt: true }).extend({
+  value: z.number().min(0).max(100000),
+  metricKey: z.string().min(1).max(100),
+  category: z.string().min(1).max(50),
+  unit: z.string().min(1).max(20),
+});
 export const insertBioAgeSnapshotSchema = createInsertSchema(bioAgeSnapshots).omit({ id: true, calculatedAt: true });
 export const insertConversationSchema = createInsertSchema(conversations).omit({ id: true, createdAt: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });

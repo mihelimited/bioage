@@ -1,8 +1,9 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertHealthMetricSchema } from "@shared/schema";
+import { insertUserSchema, insertHealthMetricSchema, registerUserSchema, loginSchema } from "@shared/schema";
 import { calculateBioAge, ALL_DOMAINS, DOMAIN_LABELS, type Domain } from "./bioage";
+import { hashPassword, verifyPassword, generateToken, authenticateToken } from "./auth";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -10,31 +11,94 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+// ─── Rate Limiting ───
+const chatRateMap = new Map<number, number[]>();
+const CHAT_RATE_LIMIT = 20;
+const CHAT_RATE_WINDOW_MS = 60_000;
+
+function checkChatRate(userId: number): boolean {
+  const now = Date.now();
+  const timestamps = chatRateMap.get(userId) ?? [];
+  const recent = timestamps.filter(t => now - t < CHAT_RATE_WINDOW_MS);
+  if (recent.length >= CHAT_RATE_LIMIT) return false;
+  recent.push(now);
+  chatRateMap.set(userId, recent);
+  return true;
+}
+
+// ─── Ownership Helper ───
+function requireOwnership(reqUserId: number | undefined, resourceUserId: number, res: any): boolean {
+  if (reqUserId !== resourceUserId) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
-  // ─── User / Onboarding ───
-  app.post("/api/users", async (req, res) => {
+  // ─── Auth (public) ───
+  app.post("/api/auth/register", async (req, res) => {
     try {
-      const data = insertUserSchema.parse(req.body);
-      const user = await storage.createUser(data);
-      res.status(201).json(user);
+      const data = registerUserSchema.parse(req.body);
+      const existing = await storage.getUserByEmail(data.email);
+      if (existing) {
+        return res.status(409).json({ error: "Email already registered" });
+      }
+      const passwordHash = await hashPassword(data.password);
+      const { password, ...userData } = data;
+      const user = await storage.createUser({ ...userData, passwordHash } as any);
+      const token = generateToken(user.id);
+      res.status(201).json({ user, token });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
   });
 
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const data = loginSchema.parse(req.body);
+      const user = await storage.getUserByEmail(data.email);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      const valid = await verifyPassword(data.password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      const token = generateToken(user.id);
+      res.json({ user, token });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ─── Meta (public) ───
+  app.get("/api/meta/domains", (_req, res) => {
+    res.json(ALL_DOMAINS.map(d => ({ key: d, label: DOMAIN_LABELS[d] })));
+  });
+
+  // ═══ All routes below require authentication ═══
+  app.use("/api/users", authenticateToken);
+  app.use("/api/conversations", authenticateToken);
+
+  // ─── User / Onboarding ───
   app.get("/api/users/:id", async (req, res) => {
-    const user = await storage.getUser(Number(req.params.id));
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const user = await storage.getUser(id);
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json(user);
   });
 
   app.patch("/api/users/:id", async (req, res) => {
     try {
-      const user = await storage.updateUser(Number(req.params.id), req.body);
+      const id = Number(req.params.id);
+      if (!requireOwnership(req.userId, id, res)) return;
+      const user = await storage.updateUser(id, req.body);
       res.json(user);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -43,20 +107,26 @@ export async function registerRoutes(
 
   // ─── Health Metrics ───
   app.get("/api/users/:id/metrics", async (req, res) => {
-    const metrics = await storage.getLatestMetrics(Number(req.params.id));
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const metrics = await storage.getLatestMetrics(id);
     res.json(metrics);
   });
 
   app.get("/api/users/:id/metrics/:key/history", async (req, res) => {
-    const metrics = await storage.getMetricHistory(Number(req.params.id), req.params.key, 30);
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const metrics = await storage.getMetricHistory(id, req.params.key, 30);
     res.json(metrics);
   });
 
   app.post("/api/users/:id/metrics", async (req, res) => {
     try {
+      const id = Number(req.params.id);
+      if (!requireOwnership(req.userId, id, res)) return;
       const data = insertHealthMetricSchema.parse({
         ...req.body,
-        userId: Number(req.params.id),
+        userId: id,
       });
       const metric = await storage.upsertMetric(data);
       res.status(201).json(metric);
@@ -67,10 +137,11 @@ export async function registerRoutes(
 
   app.post("/api/users/:id/metrics/batch", async (req, res) => {
     try {
-      const userId = Number(req.params.id);
+      const id = Number(req.params.id);
+      if (!requireOwnership(req.userId, id, res)) return;
       const results = [];
       for (const m of req.body.metrics) {
-        const data = insertHealthMetricSchema.parse({ ...m, userId });
+        const data = insertHealthMetricSchema.parse({ ...m, userId: id });
         const metric = await storage.upsertMetric(data);
         results.push(metric);
       }
@@ -82,15 +153,17 @@ export async function registerRoutes(
 
   // ─── BioAge Calculation ───
   app.get("/api/users/:id/bioage", async (req, res) => {
-    const userId = Number(req.params.id);
-    const user = await storage.getUser(userId);
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+
+    const user = await storage.getUser(id);
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const metrics = await storage.getLatestMetrics(userId);
+    const metrics = await storage.getLatestMetrics(id);
     const result = calculateBioAge(user.age, metrics);
 
     await storage.createSnapshot({
-      userId,
+      userId: id,
       bioAge: result.bioAge,
       chronologicalAge: result.chronologicalAge,
       paceOfAging: result.paceOfAging,
@@ -105,46 +178,68 @@ export async function registerRoutes(
   });
 
   app.get("/api/users/:id/bioage/history", async (req, res) => {
-    const snapshots = await storage.getSnapshotHistory(Number(req.params.id), 60);
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const snapshots = await storage.getSnapshotHistory(id, 60);
     res.json(snapshots);
   });
 
   // ─── Chat ───
   app.get("/api/users/:id/conversations", async (req, res) => {
-    const convos = await storage.getConversations(Number(req.params.id));
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const convos = await storage.getConversations(id);
     res.json(convos);
   });
 
   app.post("/api/users/:id/conversations", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
     const conv = await storage.createConversation({
-      userId: Number(req.params.id),
+      userId: id,
       title: req.body.title || "New Chat",
     });
     res.status(201).json(conv);
   });
 
   app.delete("/api/conversations/:id", async (req, res) => {
-    await storage.deleteConversation(Number(req.params.id));
+    const convId = Number(req.params.id);
+    const conv = await storage.getConversation(convId);
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
+    if (!requireOwnership(req.userId, conv.userId, res)) return;
+    await storage.deleteConversation(convId);
     res.status(204).send();
   });
 
   app.get("/api/conversations/:id/messages", async (req, res) => {
-    const msgs = await storage.getMessages(Number(req.params.id));
+    const convId = Number(req.params.id);
+    const conv = await storage.getConversation(convId);
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
+    if (!requireOwnership(req.userId, conv.userId, res)) return;
+    const msgs = await storage.getMessages(convId);
     res.json(msgs);
   });
 
   app.post("/api/conversations/:id/messages", async (req, res) => {
     try {
-      const conversationId = Number(req.params.id);
-      const { content, userId } = req.body;
+      const convId = Number(req.params.id);
+      const conv = await storage.getConversation(convId);
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+      if (!requireOwnership(req.userId, conv.userId, res)) return;
 
-      await storage.createMessage({ conversationId, role: "user", content });
+      const userId = req.userId!;
+      if (!checkChatRate(userId)) {
+        return res.status(429).json({ error: "Rate limit exceeded. Max 20 messages per minute." });
+      }
+
+      const { content } = req.body;
+      await storage.createMessage({ conversationId: convId, role: "user", content });
 
       const user = await storage.getUser(userId);
       const metrics = await storage.getLatestMetrics(userId);
       const bioAgeResult = calculateBioAge(user!.age, metrics);
 
-      const existingMessages = await storage.getMessages(conversationId);
+      const existingMessages = await storage.getMessages(convId);
       const chatHistory = existingMessages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,
@@ -194,7 +289,7 @@ Guidelines:
         }
       }
 
-      await storage.createMessage({ conversationId, role: "assistant", content: fullResponse });
+      await storage.createMessage({ conversationId: convId, role: "assistant", content: fullResponse });
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (e: any) {
@@ -210,22 +305,21 @@ Guidelines:
 
   // ─── Settings ───
   app.patch("/api/users/:id/goal", async (req, res) => {
-    const user = await storage.updateUser(Number(req.params.id), {
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const user = await storage.updateUser(id, {
       bioAgeTarget: req.body.bioAgeTarget,
     });
     res.json(user);
   });
 
   app.patch("/api/users/:id/notifications", async (req, res) => {
-    const user = await storage.updateUser(Number(req.params.id), {
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const user = await storage.updateUser(id, {
       weeklyNotifications: req.body.weeklyNotifications,
     });
     res.json(user);
-  });
-
-  // ─── Meta ───
-  app.get("/api/meta/domains", (_req, res) => {
-    res.json(ALL_DOMAINS.map(d => ({ key: d, label: DOMAIN_LABELS[d] })));
   });
 
   return httpServer;

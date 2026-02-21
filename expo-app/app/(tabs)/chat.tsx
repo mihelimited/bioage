@@ -8,7 +8,7 @@ import { Send, Bot, Sparkles } from "lucide-react-native";
 import { router } from "expo-router";
 import { colors, fonts } from "@/lib/theme";
 import { apiRequest, API_BASE } from "@/lib/api";
-import { getUserId } from "@/lib/storage";
+import { getUserId, getAuthToken } from "@/lib/storage";
 
 interface ChatMessage {
   id: number;
@@ -63,10 +63,14 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
 
     try {
+      const token = await getAuthToken();
       const res = await fetch(`${API_BASE}/api/conversations/${conversationIdRef.current}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: userMessage.content, userId }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ content: userMessage.content }),
       });
 
       const reader = res.body?.getReader();

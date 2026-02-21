@@ -16,6 +16,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aura.wellness",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSHealthShareUsageDescription": "Aura needs access to your health data to calculate your biological age.",
         "NSHealthUpdateUsageDescription": "Aura needs to save your bio-age data."
