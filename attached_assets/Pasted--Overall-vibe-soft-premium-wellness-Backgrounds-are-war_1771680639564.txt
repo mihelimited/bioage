@@ -1,0 +1,218 @@
+) Overall vibe: “soft premium wellness”
+	•	Backgrounds are warm and airy, mostly off-white/cream with slight peach tint. Nothing is pure white.
+	•	The UI feels friendly + high-end through:
+	•	oversized rounded corners
+	•	gentle drop shadows (never harsh)
+	•	pastel gradients used as ambient light, not loud color blocks
+	•	lots of breathing room (big margins, generous vertical spacing)
+	•	There’s a subtle “print/editorial” layer (serif headlines) mixed with modern iOS UI (san-serif supporting text, chips, cards).
+
+⸻
+
+2) Color system: warm neutrals + pastel “glow”
+
+Think of the color palette as two layers:
+
+A) Base neutrals (always present)
+	•	Primary canvas: creamy off-white.
+	•	Secondary surfaces: slightly darker warm gray/cream.
+	•	Dividers/borders: very faint warm gray line (almost imperceptible).
+
+B) Accent pastels (used as highlights)
+	•	Pastels are low saturation and often appear as radial or vertical gradients:
+	•	peach → pink
+	•	lavender → soft purple
+	•	pale sky blue → mint
+	•	Accents show up as:
+	•	circular icon backgrounds
+	•	soft gradient “wash” behind content
+	•	highlight rings around key controls
+	•	No pure black accents. Dark text is a soft charcoal.
+
+⸻
+
+3) Typography: editorial headline + quiet UI text
+
+Headline style
+	•	Headings are a high-contrast serif (editorial / magazine feel).
+	•	Weight is medium to semi-bold.
+	•	Line height is tight but not cramped (e.g., ~1.15–1.25).
+	•	Headline text uses title case and spans multiple lines.
+	•	Headlines are left aligned on some screens, center aligned on others depending on layout.
+
+Supporting text
+	•	Body/captions are a clean sans-serif (iOS system style feel).
+	•	Smaller text is light/regular weight and uses higher line height for airiness.
+	•	Most supporting text is in muted gray, never competing with the headline.
+
+⸻
+
+4) Layout principles: big margins, centered “hero,” floating modules
+	•	Huge corner radii everywhere:
+	•	Screen-level cards: very rounded (think “pillowy rectangle”).
+	•	Chips/buttons: fully pill-shaped.
+	•	Small tiles: rounded rectangles with soft shadows.
+	•	Content typically sits inside a tall rounded container (like a card framed within the screen) with:
+	•	thin border or subtle shadow
+	•	large internal padding
+	•	The main UI often has a center hero element (e.g., a phone mock or primary card), with smaller controls floating around it.
+
+⸻
+
+5) Key UI components (and how they look)
+
+5.1 Top brand header
+	•	A small logo mark (simple rounded square icon) + brand name.
+	•	Positioned near top, with lots of whitespace around it.
+	•	Very minimal—no heavy navigation chrome.
+
+5.2 Segmented control / tabs (top of content)
+	•	Looks like two pill chips side-by-side.
+	•	Each pill contains:
+	•	a small colored icon on the left (inside its own tiny rounded square/circle)
+	•	a title line
+	•	a smaller subtitle line
+	•	Selected state is slightly brighter with clearer contrast; unselected is more faded.
+	•	The segmented container itself is subtle—almost like two floating pills rather than a big bar.
+
+5.3 “Chips” row (micro-status / categories)
+	•	Small pill chips with tiny icons and short labels.
+	•	Very soft backgrounds, minimal outlines.
+	•	These feel tappable but gentle—no loud borders.
+
+5.4 Floating circular action buttons (icon bubbles)
+	•	A signature element: a row of circular buttons that float mid-screen.
+	•	Each is:
+	•	a perfect circle with a pastel tint background
+	•	a centered simple icon
+	•	a soft shadow that lifts it off the surface
+	•	One central bubble is often emphasized:
+	•	slightly larger
+	•	may have a gradient fill or stronger glow
+	•	can contain icon + a short label/metric underneath
+
+5.5 Primary “card” surfaces
+	•	Cards are creamy-white with:
+	•	big radius corners
+	•	soft shadow (feels like hovering 4–8dp)
+	•	Inside cards:
+	•	title text in dark gray
+	•	microcopy in lighter gray
+	•	icons sit in small colored circles or rounded squares
+
+5.6 Stats tiles (3-up row)
+	•	Three compact tiles in a row, each:
+	•	rounded rectangle
+	•	icon at top (in a tinted circle)
+	•	label + value underneath
+	•	They float over content slightly (layered look).
+	•	Visual hierarchy: icon → short label → numeric value.
+
+5.7 “Glass”/frosted overlay card (callout)
+	•	There’s a prominent overlay callout card that feels like:
+	•	a rounded rectangle
+	•	slightly translucent/airy (even if not truly transparent)
+	•	with a soft gradient tint at edges
+	•	It includes:
+	•	headline text on left
+	•	tiny illustration/doodle on right (playful line art)
+	•	a wide pill button at bottom
+
+5.8 Primary button (pill)
+	•	Wide, low-height pill.
+	•	Background is near-white or very light warm gray.
+	•	Text is centered, medium weight.
+	•	Shadow is minimal; it feels “pressable” via motion/haptics rather than heavy contrast.
+
+⸻
+
+6) Iconography & illustration style
+	•	Icons are simple, friendly, rounded, typically single-color glyphs.
+	•	Each icon usually sits inside a tinted circular background.
+	•	Occasional playful illustration appears as thin black line doodles (stars/sparkles/hand gesture) for warmth.
+
+⸻
+
+7) Interaction patterns (how it should feel)
+
+Tap feedback
+	•	Micro-scale animation:
+	•	buttons slightly compress (scale to ~0.97)
+	•	shadow tightens a little
+	•	Soft haptic on primary actions (light impact).
+	•	No sharp “ink” ripples; it’s iOS-native subtlety.
+
+Navigation transitions
+	•	Screen changes should feel:
+	•	slowish + floaty
+	•	like cards sliding on a cushion of air
+	•	Use easing that ramps gently in/out (avoid snappy linear motion).
+
+Cards and overlays
+	•	Overlays appear as:
+	•	rising from below with slight fade
+	•	background dims minimally (not dark; more like a warm gray veil at ~10–20%)
+	•	Dismiss by:
+	•	swipe down
+	•	tap outside (if appropriate)
+
+Segmented control changes
+	•	Selection animates with a sliding highlight or subtle background shift.
+	•	Text/icon contrast increases on selection.
+
+Floating bubble row
+	•	When selecting a bubble:
+	•	it enlarges slightly
+	•	surrounding bubbles subtly shift outward or dim
+	•	the selected one feels “centered” in attention
+
+⸻
+
+8) Spacing, sizing, and radii (practical guidance)
+
+Use these as relative rules (you can adapt exact numbers):
+	•	Outer margins: large (think 24–32pt feel).
+	•	Card padding: 16–24pt.
+	•	Corner radii:
+	•	big containers: 28–36
+	•	tiles: 18–24
+	•	pills: 999 (fully rounded)
+	•	icon bubbles: perfect circles (44–56pt typical, hero bubble 60–72pt)
+	•	Shadows:
+	•	always soft blur, low opacity, slightly warm/neutral
+	•	no hard drop shadows or thick borders
+
+⸻
+
+9) Text hierarchy rules (super consistent)
+	•	One dominant serif headline per screen.
+	•	Everything else is quiet and supportive:
+	•	short labels
+	•	small descriptions
+	•	numbers/metrics in medium emphasis
+	•	Keep contrast comfortable: charcoal text, not black.
+
+⸻
+
+10) Accessibility in this style (without breaking aesthetics)
+
+To keep the “soft” look but remain usable:
+	•	Ensure tinted icon backgrounds still give enough contrast for glyphs.
+	•	Increase contrast on selected chips/buttons via:
+	•	slightly darker text
+	•	clearer shadow/lift
+	•	subtle border
+	•	Support Dynamic Type by letting:
+	•	serif headlines wrap more
+	•	tiles stack into 2 rows when needed
+
+⸻
+
+If you want to apply this style to another app: the high-agency move
+
+Build a component library first (not screens):
+	1.	“Pill Card” (big radius, soft shadow, warm surface)
+	2.	“Icon Bubble” (circular action) + “Hero Bubble” variant
+	3.	“3-up Metric Tile”
+	4.	“Serif Hero Header block” (headline + short subtitle)
+	5.	“Frosted Callout Overlay” (with doodle slot + pill CTA)
