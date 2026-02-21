@@ -10,6 +10,8 @@ import {
   StyleSheet,
   Animated as RNAnimated,
   Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +19,7 @@ import { Heart, ChevronRight, Activity } from "lucide-react-native";
 import { colors, fonts, radii } from "@/lib/theme";
 import { apiRequest } from "@/lib/api";
 import { setAuth } from "@/lib/storage";
+import { syncHealthData, HealthKitMetric } from "@/lib/healthkit";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -48,37 +51,53 @@ export default function OnboardingScreen() {
     });
   };
 
-  const handleFinish = async () => {
+  const seedMetrics: HealthKitMetric[] = [
+    { category: "autonomic", metricKey: "resting_hr", value: 58, unit: "bpm" },
+    { category: "autonomic", metricKey: "hrv", value: 55, unit: "ms" },
+    { category: "fitness", metricKey: "vo2_max", value: 42, unit: "ml/kg/min" },
+    { category: "sleep", metricKey: "sleep_duration", value: 7.5, unit: "hrs" },
+    { category: "sleep", metricKey: "sleep_efficiency", value: 88, unit: "%" },
+    { category: "mobility", metricKey: "walking_speed", value: 1.35, unit: "m/s" },
+  ];
+
+  const registerAndPostMetrics = async (metrics: HealthKitMetric[]) => {
+    const heightCm = parseFloat(height) || 170;
+    const weightKg = parseFloat(weight) || 65;
+    const userAge = parseInt(age) || 30;
+
+    const res = await apiRequest("POST", "/api/auth/register", {
+      email: email.trim().toLowerCase(),
+      password,
+      age: userAge,
+      sex,
+      heightCm,
+      weightKg,
+      onboardingComplete: true,
+    });
+    const { user, token } = await res.json();
+    await setAuth(user.id, token);
+
+    await apiRequest("POST", `/api/users/${user.id}/metrics/batch`, { metrics });
+
+    router.replace("/(tabs)");
+  };
+
+  const handleFinishWithSeedData = async () => {
     setLoading(true);
     try {
-      const heightCm = parseFloat(height) || 170;
-      const weightKg = parseFloat(weight) || 65;
-      const userAge = parseInt(age) || 30;
+      await registerAndPostMetrics(seedMetrics);
+    } catch (e) {
+      console.error("Onboarding error:", e);
+      setLoading(false);
+    }
+  };
 
-      const res = await apiRequest("POST", "/api/auth/register", {
-        email: email.trim().toLowerCase(),
-        password,
-        age: userAge,
-        sex,
-        heightCm,
-        weightKg,
-        onboardingComplete: true,
-      });
-      const { user, token } = await res.json();
-      await setAuth(user.id, token);
-
-      await apiRequest("POST", `/api/users/${user.id}/metrics/batch`, {
-        metrics: [
-          { category: "autonomic", metricKey: "resting_hr", value: 58, unit: "bpm" },
-          { category: "autonomic", metricKey: "hrv", value: 55, unit: "ms" },
-          { category: "fitness", metricKey: "vo2_max", value: 42, unit: "ml/kg/min" },
-          { category: "sleep", metricKey: "sleep_duration", value: 7.5, unit: "hrs" },
-          { category: "sleep", metricKey: "sleep_efficiency", value: 88, unit: "%" },
-          { category: "mobility", metricKey: "walking_speed", value: 1.35, unit: "m/s" },
-        ],
-      });
-
-      router.replace("/(tabs)");
+  const handleFinishWithHealthKit = async () => {
+    setLoading(true);
+    try {
+      const realMetrics = await syncHealthData();
+      const metrics = realMetrics.length > 0 ? realMetrics : seedMetrics;
+      await registerAndPostMetrics(metrics);
     } catch (e) {
       console.error("Onboarding error:", e);
       setLoading(false);
@@ -89,11 +108,12 @@ export default function OnboardingScreen() {
     if (currentStep < steps.length - 1) {
       animateStep(currentStep + 1);
     } else {
-      handleFinish();
+      handleFinishWithHealthKit();
     }
   };
 
   return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <View style={[s.container, { paddingTop: insets.top + 16 }]}>
       <View style={s.progressRow}>
         {steps.map((_, idx) => (
@@ -264,8 +284,19 @@ export default function OnboardingScreen() {
             </>
           )}
         </TouchableOpacity>
+        {currentStep === steps.length - 1 && !loading && (
+          <TouchableOpacity
+            style={s.skipButton}
+            onPress={handleFinishWithSeedData}
+            activeOpacity={0.7}
+            testID="button-skip"
+          >
+            <Text style={s.skipText}>Skip for now</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -324,4 +355,6 @@ const s = StyleSheet.create({
     shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
   },
   ctaText: { fontFamily: fonts.sansMedium, fontSize: 16, color: colors.white },
+  skipButton: { alignItems: "center", paddingVertical: 14 },
+  skipText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground },
 });

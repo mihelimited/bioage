@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "scheme": "aura",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -47,6 +47,14 @@
           "healthUpdatePermission": "Aura saves your bio-age calculations to your health record."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "d1fcbe51-280f-4e38-a771-a6ffb2d2514a"
+      }
+    }
   }
 }
