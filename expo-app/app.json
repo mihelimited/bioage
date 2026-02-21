@@ -34,7 +34,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false,
+          "healthSharePermission": "Aura reads your health data to calculate your biological age and provide personalized wellness insights.",
+          "healthUpdatePermission": "Aura saves your bio-age calculations to your health record."
+        }
+      ]
     ]
   }
 }

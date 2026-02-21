@@ -1,15 +1,27 @@
 import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Switch, Modal, Pressable, StyleSheet, ActivityIndicator,
+  Switch, Modal, Pressable, StyleSheet, ActivityIndicator, Platform, Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { Target, Bell, ShieldAlert, ChevronRight, X, Activity } from "lucide-react-native";
+import { Target, Bell, ShieldAlert, ChevronRight, Activity, Heart, RefreshCw } from "lucide-react-native";
 import { colors, fonts } from "@/lib/theme";
 import { apiGet, apiRequest } from "@/lib/api";
 import { getUserId, clearUserId } from "@/lib/storage";
+import { isHealthKitAvailable, syncHealthData, getLastSyncTime } from "@/lib/healthkit";
+
+function formatTimeSince(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -23,13 +35,43 @@ export default function SettingsScreen() {
   const [hrvInput, setHrvInput] = useState("");
   const [savingGoal, setSavingGoal] = useState(false);
   const [savingOverrides, setSavingOverrides] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const healthKitAvailable = isHealthKitAvailable();
 
   useEffect(() => {
     getUserId().then((id) => {
       if (!id) router.replace("/onboarding");
       else setUserId(id);
     });
+    getLastSyncTime().then(setLastSync);
   }, []);
+
+  const handleHealthSync = async () => {
+    if (!userId) return;
+    setSyncing(true);
+    try {
+      const metrics = await syncHealthData();
+      if (metrics.length === 0) {
+        if (Platform.OS !== "ios") {
+          Alert.alert("Not Available", "Apple Health sync is only available on iOS devices.");
+        } else {
+          Alert.alert("No Data", "No health data was found. Make sure you have granted Aura access in Health settings.");
+        }
+        setSyncing(false);
+        return;
+      }
+      await apiRequest("POST", `/api/users/${userId}/metrics/batch`, { metrics });
+      queryClient.invalidateQueries({ queryKey: ["bioage", userId] });
+      const syncTime = new Date().toISOString();
+      setLastSync(syncTime);
+      Alert.alert("Synced", `Successfully synced ${metrics.length} metrics from Apple Health.`);
+    } catch (e: any) {
+      console.error("Health sync error:", e);
+      Alert.alert("Sync Error", e.message || "Failed to sync health data.");
+    }
+    setSyncing(false);
+  };
 
   const { data: user } = useQuery({
     queryKey: ["user", userId],
@@ -112,15 +154,31 @@ export default function SettingsScreen() {
 
         <Text style={s.sectionLabel}>DATA & OVERRIDES</Text>
         <View style={s.card}>
-          <View style={[s.cardRow, s.cardRowBorder]}>
-            <View style={[s.iconCircle, { backgroundColor: colors.gray100 }]}>
-              <Activity size={20} color={colors.gray600} />
+          <TouchableOpacity
+            style={[s.cardRow, s.cardRowBorder]}
+            onPress={handleHealthSync}
+            disabled={syncing}
+            testID="button-health-sync"
+          >
+            <View style={[s.iconCircle, { backgroundColor: colors.red50 }]}>
+              <Heart size={20} color={colors.rose500} />
             </View>
             <View style={s.cardContent}>
-              <Text style={s.cardTitle}>Health Data Sync</Text>
-              <Text style={[s.cardSub, { color: colors.green600 }]}>Demo Mode</Text>
+              <Text style={s.cardTitle}>Apple Health</Text>
+              <Text style={s.cardSub}>
+                {!healthKitAvailable
+                  ? "Available on iOS device"
+                  : lastSync
+                  ? `Last synced ${formatTimeSince(lastSync)}`
+                  : "Tap to sync your health data"}
+              </Text>
             </View>
-          </View>
+            {syncing ? (
+              <ActivityIndicator size="small" color={colors.rose500} />
+            ) : (
+              <RefreshCw size={18} color="rgba(0,0,0,0.2)" />
+            )}
+          </TouchableOpacity>
           <TouchableOpacity style={s.cardRow} onPress={() => setShowOverrideSheet(true)} testID="button-overrides">
             <View style={[s.iconCircle, { backgroundColor: colors.orange50 }]}>
               <ShieldAlert size={20} color={colors.orange600} />
