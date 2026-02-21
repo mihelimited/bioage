@@ -25,8 +25,14 @@ async function setLastSyncTime(): Promise<void> {
 function getHealthKit(): any | null {
   if (Platform.OS !== "ios") return null;
   try {
-    return require("react-native-health").default;
-  } catch {
+    const mod = require("react-native-health").default;
+    if (!mod) {
+      console.warn("[HealthKit] Module loaded but .default is falsy");
+      return null;
+    }
+    return mod;
+  } catch (e) {
+    console.warn("[HealthKit] Failed to load react-native-health:", e);
     return null;
   }
 }
@@ -49,10 +55,11 @@ export async function initializeHealthKit(): Promise<boolean> {
       { permissions: { read: readPerms, write: [] } } as any,
       (error: any) => {
         if (error) {
-          console.log("HealthKit init error:", error);
+          console.warn("[HealthKit] Init failed:", error);
           resolve(false);
           return;
         }
+        console.log("[HealthKit] Initialized successfully");
         resolve(true);
       }
     );
@@ -73,11 +80,18 @@ function callHK(hk: any, method: string, options: any): Promise<any> {
 }
 
 export async function syncHealthData(): Promise<HealthKitMetric[]> {
+  console.log("[HealthKit] syncHealthData called, platform:", Platform.OS);
   const AppleHealthKit = getHealthKit();
-  if (!AppleHealthKit) return [];
+  if (!AppleHealthKit) {
+    console.warn("[HealthKit] Module not available, returning empty");
+    return [];
+  }
 
   const initialized = await initializeHealthKit();
-  if (!initialized) return [];
+  if (!initialized) {
+    console.warn("[HealthKit] Init failed, returning empty");
+    return [];
+  }
 
   const metrics: HealthKitMetric[] = [];
   const thirtyDaysAgo = new Date();
@@ -209,5 +223,6 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
     await setLastSyncTime();
   }
 
+  console.log("[HealthKit] Sync complete, returning", metrics.length, "metrics");
   return metrics;
 }

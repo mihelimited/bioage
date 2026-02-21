@@ -12,6 +12,7 @@ import {
   Platform,
   Keyboard,
   TouchableWithoutFeedback,
+  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +31,20 @@ const steps = [
   { id: "sync", title: "Connect Data" },
 ];
 
+function parseErrorMessage(e: any): string {
+  const raw = e?.message ?? "Something went wrong";
+  // apiRequest throws "STATUS: body" — try to extract JSON error
+  const match = raw.match(/^\d+:\s*(.+)/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (parsed.error) return parsed.error;
+    } catch {}
+    return match[1];
+  }
+  return raw;
+}
+
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(0);
@@ -40,6 +55,7 @@ export default function OnboardingScreen() {
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const fadeAnim = useRef(new RNAnimated.Value(1)).current;
 
   const useNative = Platform.OS !== "web";
@@ -84,22 +100,28 @@ export default function OnboardingScreen() {
 
   const handleFinishWithSeedData = async () => {
     setLoading(true);
+    setError("");
     try {
       await registerAndPostMetrics(seedMetrics);
-    } catch (e) {
-      console.error("Onboarding error:", e);
+    } catch (e: any) {
+      const msg = parseErrorMessage(e);
+      setError(msg);
+      Alert.alert("Couldn't finish setup", msg);
       setLoading(false);
     }
   };
 
   const handleFinishWithHealthKit = async () => {
     setLoading(true);
+    setError("");
     try {
       const realMetrics = await syncHealthData();
       const metrics = realMetrics.length > 0 ? realMetrics : seedMetrics;
       await registerAndPostMetrics(metrics);
-    } catch (e) {
-      console.error("Onboarding error:", e);
+    } catch (e: any) {
+      const msg = parseErrorMessage(e);
+      setError(msg);
+      Alert.alert("Couldn't finish setup", msg);
       setLoading(false);
     }
   };
@@ -266,6 +288,7 @@ export default function OnboardingScreen() {
       </RNAnimated.View>
 
       <View style={[s.bottomCta, { paddingBottom: insets.bottom + 16 }]}>
+        {error ? <Text style={s.errorText}>{error}</Text> : null}
         <TouchableOpacity
           style={s.ctaButton}
           onPress={handleNext}
@@ -355,6 +378,7 @@ const s = StyleSheet.create({
     shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
   },
   ctaText: { fontFamily: fonts.sansMedium, fontSize: 16, color: colors.white },
+  errorText: { fontFamily: fonts.sans, fontSize: 14, color: colors.red500, textAlign: "center", marginBottom: 8 },
   skipButton: { alignItems: "center", paddingVertical: 14 },
   skipText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground },
 });
