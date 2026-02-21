@@ -1,7 +1,8 @@
-import { Platform } from "react-native";
+import { Platform, Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const LAST_SYNC_KEY = "aura_healthkit_last_sync";
+const HK_PERMISSIONS_REQUESTED_KEY = "aura_healthkit_permissions_requested";
 
 export interface HealthKitMetric {
   category: string;
@@ -64,6 +65,28 @@ export async function initializeHealthKit(): Promise<boolean> {
       }
     );
   });
+}
+
+// Request HealthKit permissions and track that we've asked
+export async function requestHealthKitPermissions(): Promise<boolean> {
+  const initialized = await initializeHealthKit();
+  if (initialized) {
+    await AsyncStorage.setItem(HK_PERMISSIONS_REQUESTED_KEY, "true");
+  }
+  return initialized;
+}
+
+// Check if we've ever shown the permission dialog
+export async function hasRequestedPermissions(): Promise<boolean> {
+  const val = await AsyncStorage.getItem(HK_PERMISSIONS_REQUESTED_KEY);
+  return val === "true";
+}
+
+// Open iOS Settings so user can manage Health permissions
+export function openHealthSettings(): void {
+  if (Platform.OS === "ios") {
+    Linking.openURL("app-settings:");
+  }
 }
 
 function callHK(hk: any, method: string, options: any): Promise<any> {

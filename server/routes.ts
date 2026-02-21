@@ -6,6 +6,12 @@ import { calculateBioAge, ALL_DOMAINS, DOMAIN_LABELS, type Domain } from "./bioa
 import { hashPassword, verifyPassword, generateToken, authenticateToken } from "./auth";
 import OpenAI from "openai";
 
+// Strip sensitive fields before sending user data to clients
+function sanitizeUser(user: any) {
+  const { passwordHash, ...safe } = user;
+  return safe;
+}
+
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -52,7 +58,7 @@ export async function registerRoutes(
       const { password, ...userData } = data;
       const user = await storage.createUser({ ...userData, passwordHash } as any);
       const token = generateToken(user.id);
-      res.status(201).json({ user, token });
+      res.status(201).json({ user: sanitizeUser(user), token });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -70,7 +76,7 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Invalid email or password" });
       }
       const token = generateToken(user.id);
-      res.json({ user, token });
+      res.json({ user: sanitizeUser(user), token });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -91,7 +97,7 @@ export async function registerRoutes(
     if (!requireOwnership(req.userId, id, res)) return;
     const user = await storage.getUser(id);
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json(user);
+    res.json(sanitizeUser(user));
   });
 
   app.patch("/api/users/:id", async (req, res) => {
@@ -99,7 +105,7 @@ export async function registerRoutes(
       const id = Number(req.params.id);
       if (!requireOwnership(req.userId, id, res)) return;
       const user = await storage.updateUser(id, req.body);
-      res.json(user);
+      res.json(sanitizeUser(user));
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -310,7 +316,7 @@ Guidelines:
     const user = await storage.updateUser(id, {
       bioAgeTarget: req.body.bioAgeTarget,
     });
-    res.json(user);
+    res.json(sanitizeUser(user));
   });
 
   app.patch("/api/users/:id/notifications", async (req, res) => {
@@ -319,7 +325,7 @@ Guidelines:
     const user = await storage.updateUser(id, {
       weeklyNotifications: req.body.weeklyNotifications,
     });
-    res.json(user);
+    res.json(sanitizeUser(user));
   });
 
   return httpServer;

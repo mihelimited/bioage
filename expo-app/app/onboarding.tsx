@@ -20,7 +20,7 @@ import { Heart, ChevronRight, Activity } from "lucide-react-native";
 import { colors, fonts, radii } from "@/lib/theme";
 import { apiRequest } from "@/lib/api";
 import { setAuth } from "@/lib/storage";
-import { syncHealthData, HealthKitMetric } from "@/lib/healthkit";
+import { syncHealthData, HealthKitMetric, requestHealthKitPermissions } from "@/lib/healthkit";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -127,14 +127,32 @@ export default function OnboardingScreen() {
     setLoading(true);
     setError("");
     try {
+      // Step 1: Request permissions (shows iOS dialog on first call)
+      const permGranted = await requestHealthKitPermissions();
+      if (!permGranted) {
+        Alert.alert(
+          "Health Data Unavailable",
+          "HealthKit is not available on this device. We'll start you off with sample data.",
+          [{ text: "Continue", onPress: () => handleFinishWithSeedData() }],
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Brief delay for iOS to propagate permission state
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Step 3: Now read data
       const realMetrics = await syncHealthData();
       if (realMetrics.length > 0) {
         await registerAndPostMetrics(realMetrics);
       } else {
-        // HealthKit returned nothing — tell user, fall back to seed data
         Alert.alert(
           "No Health Data Found",
-          "We couldn't read data from Apple Health. This can happen if permissions weren't granted or no data is available yet.\n\nWe'll start you off with sample data — you can sync Apple Health anytime from Settings.",
+          "We requested access to Apple Health but couldn't find any data yet. This can happen if:\n\n" +
+          "• You didn't grant all permissions in the dialog\n" +
+          "• No recent health data is available\n\n" +
+          "We'll start with sample data — you can sync Apple Health anytime from Settings.",
           [
             {
               text: "Continue with sample data",

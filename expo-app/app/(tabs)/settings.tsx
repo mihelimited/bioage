@@ -11,7 +11,7 @@ import { Target, Bell, ShieldAlert, ChevronRight, Activity, Heart, RefreshCw } f
 import { colors, fonts } from "@/lib/theme";
 import { apiGet, apiRequest } from "@/lib/api";
 import { getUserId, clearAuth } from "@/lib/storage";
-import { isHealthKitAvailable, syncHealthData, getLastSyncTime } from "@/lib/healthkit";
+import { isHealthKitAvailable, syncHealthData, getLastSyncTime, hasRequestedPermissions, requestHealthKitPermissions, openHealthSettings } from "@/lib/healthkit";
 
 function formatTimeSince(isoDate: string): string {
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -38,6 +38,7 @@ export default function SettingsScreen() {
   const [savingOverrides, setSavingOverrides] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [permissionsRequested, setPermissionsRequested] = useState<boolean | null>(null);
   const healthKitAvailable = isHealthKitAvailable();
 
   useEffect(() => {
@@ -46,12 +47,28 @@ export default function SettingsScreen() {
       else setUserId(id);
     });
     getLastSyncTime().then(setLastSync);
+    hasRequestedPermissions().then(setPermissionsRequested);
   }, []);
 
   const handleHealthSync = async () => {
     if (!userId) return;
     setSyncing(true);
     try {
+      const alreadyRequested = await hasRequestedPermissions();
+
+      if (!alreadyRequested) {
+        // First time — show iOS permission dialog
+        const granted = await requestHealthKitPermissions();
+        setPermissionsRequested(true);
+        if (!granted) {
+          Alert.alert("Health Data Unavailable", "HealthKit is not available on this device.");
+          setSyncing(false);
+          return;
+        }
+        // Brief delay for permission propagation
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
       const metrics = await syncHealthData();
       if (metrics.length === 0) {
         if (Platform.OS !== "ios") {
@@ -59,7 +76,13 @@ export default function SettingsScreen() {
         } else {
           Alert.alert(
             "No Health Data Found",
-            "This could mean:\n\n• Aura doesn't have permission to read Health data — open Settings → Health → Aura and enable all categories\n\n• No recent health data is available (heart rate, HRV, sleep, VO2 max)\n\n• You're running on the Simulator (no real Health data)"
+            "Aura couldn't read any health data. This usually means:\n\n" +
+            "• Permissions were not granted — open the Health app → Sharing → Apps → Aura and enable all categories\n\n" +
+            "• No recent health data is available (heart rate, HRV, sleep, VO2 max)",
+            [
+              { text: "Open Settings", onPress: () => openHealthSettings() },
+              { text: "OK", style: "cancel" },
+            ]
           );
         }
         setSyncing(false);
@@ -174,6 +197,8 @@ export default function SettingsScreen() {
                   ? "Available on iOS device"
                   : lastSync
                   ? `Last synced ${formatTimeSince(lastSync)}`
+                  : permissionsRequested === false
+                  ? "Tap to connect Apple Health"
                   : "Tap to sync your health data"}
               </Text>
             </View>
