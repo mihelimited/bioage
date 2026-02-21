@@ -127,10 +127,18 @@ export default function Home() {
 
                   {/* 5.3 "Chips" Row */}
                   <div className="flex gap-3 overflow-x-auto hide-scrollbar -mx-6 px-6">
-                    {["Sleep Quality", "HRV Recovery", "V02 Max"].map((chip, i) => (
-                      <div key={chip} className="flex-none bg-white rounded-full px-4 py-2 text-sm font-medium text-muted-foreground border border-black/5 shadow-sm whitespace-nowrap">
-                        {chip}
-                      </div>
+                    {[
+                      { label: "Sleep", status: "Optimal", icon: Moon, color: "text-indigo-500", bg: "bg-indigo-500/10" },
+                      { label: "HRV", status: "Good", icon: HeartPulse, color: "text-rose-500", bg: "bg-rose-500/10" },
+                      { label: "V02 Max", status: "High", icon: Activity, color: "text-emerald-500", bg: "bg-emerald-500/10" }
+                    ].map((chip, i) => (
+                      <button key={chip.label} className="flex-none bg-white hover:bg-secondary/50 transition-colors rounded-full pl-1.5 pr-4 py-1.5 text-sm font-medium border border-black/5 shadow-sm flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${chip.bg}`}>
+                          <chip.icon className={`w-3.5 h-3.5 ${chip.color}`} />
+                        </div>
+                        <span className="text-muted-foreground">{chip.label}</span>
+                        <span className="text-foreground ml-1">{chip.status}</span>
+                      </button>
                     ))}
                   </div>
 
