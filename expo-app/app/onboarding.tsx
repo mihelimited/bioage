@@ -33,14 +33,26 @@ const steps = [
 
 function parseErrorMessage(e: any): string {
   const raw = e?.message ?? "Something went wrong";
+
+  // Catch JSON parsing failures (server returned HTML instead of JSON)
+  if (raw.includes("JSON Parse error") || raw.includes("Unexpected token")) {
+    return "Server is temporarily unavailable. Please try again later.";
+  }
+
   // apiRequest throws "STATUS: body" — try to extract JSON error
-  const match = raw.match(/^\d+:\s*(.+)/);
+  const match = raw.match(/^\d+:\s*(.+)/s);
   if (match) {
+    const body = match[1];
+    // If the body looks like HTML, don't show it
+    if (body.trimStart().startsWith("<")) {
+      return "Server is temporarily unavailable. Please try again later.";
+    }
     try {
-      const parsed = JSON.parse(match[1]);
+      const parsed = JSON.parse(body);
       if (parsed.error) return parsed.error;
     } catch {}
-    return match[1];
+    // Truncate long non-JSON bodies (HTML pages etc)
+    return body.length > 200 ? body.slice(0, 200) + "…" : body;
   }
   return raw;
 }

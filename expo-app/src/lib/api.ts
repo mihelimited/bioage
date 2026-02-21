@@ -49,6 +49,11 @@ export async function apiRequest(method: string, path: string, data?: unknown): 
     const text = await res.text();
     throw new Error(`${res.status}: ${text}`);
   }
+  // Guard against non-JSON success responses (e.g. Replit returning HTML error page with 200)
+  const ct = res.headers.get("content-type") ?? "";
+  if (data !== undefined && !ct.includes("application/json")) {
+    throw new Error("Server returned an unexpected response. Please try again later.");
+  }
   return res;
 }
 
