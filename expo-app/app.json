@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Aura Wellness",
+    "slug": "aura-wellness",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "aura",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FBF9F6"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.aura.wellness",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Aura needs access to your health data to calculate your biological age.",
+        "NSHealthUpdateUsageDescription": "Aura needs to save your bio-age data."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FBF9F6"
+      },
+      "package": "com.aura.wellness"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ]
+  }
+}
