@@ -23,11 +23,14 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
   }
   next();
 });
@@ -85,14 +88,11 @@ app.use((req, res, next) => {
     return res.status(status).json({ message });
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+    const { setupExpoProxy } = await import("./expo-proxy");
+    await setupExpoProxy(httpServer, app);
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT

@@ -1,10 +1,16 @@
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 
 function getBaseUrl(): string {
   if (Platform.OS === "web") {
-    return "http://localhost:5001";
+    return "";
   }
-  return "http://localhost:5001";
+  const debuggerHost = Constants.expoConfig?.hostUri ?? Constants.manifest2?.extra?.expoGo?.debuggerHost;
+  if (debuggerHost) {
+    const host = debuggerHost.split(":")[0];
+    return `http://${host}:5000`;
+  }
+  return "http://localhost:5000";
 }
 
 export const API_BASE = getBaseUrl();

@@ -4,10 +4,11 @@
 
 Aura is a biological age tracking and wellness application that calculates a user's "bio-age" based on health metrics (heart rate, VO2 max, HRV, sleep, activity, body composition). It presents this data through a soft, premium wellness-styled mobile-first UI with an AI-powered chat assistant for personalized health insights.
 
-The app follows a monorepo structure with three main directories:
-- `client/` — React SPA (Vite + TypeScript)
+The app follows a monorepo structure with these main directories:
+- `expo-app/` — React Native/Expo frontend (file-based routing via Expo Router)
 - `server/` — Express API server (TypeScript)
 - `shared/` — Shared schema and type definitions (Drizzle ORM + Zod)
+- `client/` — Legacy React web SPA (deprecated, replaced by expo-app)
 
 ## User Preferences
 
@@ -15,15 +16,16 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript, bundled by Vite
-- **Routing**: Wouter (lightweight client-side router) with 4 pages: Home (`/`), Onboarding (`/onboarding`), Chat (`/chat`), Settings (`/settings`)
+### Frontend Architecture (Expo/React Native)
+- **Framework**: React Native with Expo SDK 54, TypeScript
+- **Routing**: Expo Router (file-based routing) with bottom tabs: Home (`/(tabs)/`), Chat (`/(tabs)/chat`), Settings (`/(tabs)/settings`), plus Onboarding (`/onboarding`)
 - **State Management**: TanStack React Query for server state; local component state via React hooks
-- **Styling**: Tailwind CSS v4 (using `@tailwindcss/vite` plugin) with shadcn/ui component library (New York style). The design follows a "soft premium wellness" aesthetic with warm neutrals, pastel accents, oversized rounded corners, and editorial serif headings (Lora) paired with clean sans-serif body text (DM Sans)
-- **Animations**: Framer Motion for page transitions and micro-interactions
-- **UI Components**: Full shadcn/ui component suite in `client/src/components/ui/`; custom `BottomNav` component for mobile navigation
-- **Path Aliases**: `@/` maps to `client/src/`, `@shared/` maps to `shared/`
-- **User Identity**: Simple localStorage-based user ID (`aura_user_id`) — no authentication system
+- **Styling**: React Native StyleSheet with custom theme system (`expo-app/src/lib/theme.ts`). Design follows "soft premium wellness" aesthetic with warm neutrals, pastel accents, oversized rounded corners, editorial serif headings (Lora) paired with clean sans-serif body text (DM Sans)
+- **Animations**: React Native Animated API for page transitions
+- **UI Components**: Custom React Native components using Lucide React Native icons
+- **Path Aliases**: `@/` maps to `expo-app/src/`
+- **User Identity**: AsyncStorage-based user ID (`aura_user_id`) — no authentication system
+- **Web Support**: Expo Web via react-native-web, served through Express proxy in development
 
 ### Backend Architecture
 - **Runtime**: Node.js with Express 5
@@ -37,7 +39,14 @@ Preferred communication style: Simple, everyday language.
   - `POST /api/users/:id/conversations/:cid/messages` — Chat messages with SSE streaming
 - **Bio-Age Engine**: Custom algorithm in `server/bioage.ts` that computes biological age offset from chronological age based on health metrics across categories (cardiovascular, sleep, recovery, activity, body composition). Each metric has optimal ranges and maximum impact values.
 - **AI Integration**: OpenAI API (via Replit AI Integrations) for the wellness chat assistant. Uses environment variables `AI_INTEGRATIONS_OPENAI_API_KEY` and `AI_INTEGRATIONS_OPENAI_BASE_URL`.
-- **Development**: Vite dev server runs as middleware in development mode with HMR; static files served in production from `dist/public/`
+- **Development**: Express on port 5000 proxies non-API requests to Expo Metro bundler on port 8081 (via `server/expo-proxy.ts`). CORS middleware enables cross-origin requests.
+
+### Development Architecture
+- Express API server runs on port 5000 (Replit's exposed port)
+- Expo Metro dev server runs on port 8081 (internal only)
+- Express proxies all non-`/api` requests to Metro, stripping Origin headers for CORS compatibility
+- The `npm run dev` command starts both servers together via the expo-proxy module
+- Native devices connect via Expo Constants `hostUri` for the API base URL
 
 ### Replit Integrations
 The `server/replit_integrations/` and `client/replit_integrations/` directories contain pre-built modules for:
@@ -61,7 +70,7 @@ These are utility modules that can be registered as Express routes or used as Re
 - **Validation**: Zod schemas generated from Drizzle schemas via `drizzle-zod`
 
 ### Build System
-- **Client Build**: Vite produces static assets to `dist/public/`
+- **Client Build**: Expo web export for static assets
 - **Server Build**: esbuild bundles server code to `dist/index.cjs` (CommonJS format). Key dependencies are bundled (not externalized) to reduce cold start times.
 - **Build Script**: Custom `script/build.ts` orchestrates both builds with an allowlist of dependencies to bundle
 
@@ -72,9 +81,9 @@ These are utility modules that can be registered as Express routes or used as Re
 - **OpenAI API** (via Replit AI Integrations): Powers the wellness chat assistant. Requires `AI_INTEGRATIONS_OPENAI_API_KEY` and `AI_INTEGRATIONS_OPENAI_BASE_URL` environment variables.
 
 ### Key NPM Packages
-- **Frontend**: React, Vite, TanStack React Query, Wouter, Framer Motion, Radix UI primitives, shadcn/ui, Recharts, Embla Carousel, react-day-picker, react-hook-form
-- **Backend**: Express 5, Drizzle ORM, pg (node-postgres), OpenAI SDK, connect-pg-simple, nanoid
+- **Frontend (Expo)**: React Native, Expo, Expo Router, TanStack React Query, Lucide React Native, react-native-safe-area-context, react-native-screens, react-native-svg, react-native-gesture-handler, react-native-reanimated, moti, AsyncStorage
+- **Backend**: Express 5, Drizzle ORM, pg (node-postgres), OpenAI SDK, http-proxy-middleware, nanoid
 - **Shared**: Zod, drizzle-zod, date-fns
 
-### Fonts (External)
-- Google Fonts: DM Sans (sans-serif body text) and Lora (serif headlines), loaded via `<link>` tags in `index.html`
+### Fonts (Bundled)
+- DM Sans (sans-serif body text) and Lora (serif headlines), bundled as TTF files in `expo-app/assets/fonts/`
