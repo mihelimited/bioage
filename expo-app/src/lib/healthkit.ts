@@ -26,9 +26,9 @@ async function setLastSyncTime(): Promise<void> {
 function getHealthKit(): any | null {
   if (Platform.OS !== "ios") return null;
   try {
-    const mod = require("react-native-health").default;
+    const mod = require("react-native-health");
     if (!mod) {
-      console.warn("[HealthKit] Module loaded but .default is falsy");
+      console.warn("[HealthKit] Module loaded but value is falsy");
       return null;
     }
     return mod;
