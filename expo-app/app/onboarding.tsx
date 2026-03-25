@@ -68,6 +68,7 @@ export default function OnboardingScreen() {
   const [weight, setWeight] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isLoginMode, setIsLoginMode] = useState(false);
   const fadeAnim = useRef(new RNAnimated.Value(1)).current;
 
   const useNative = Platform.OS !== "web";
@@ -87,6 +88,43 @@ export default function OnboardingScreen() {
     { category: "sleep", metricKey: "sleep_efficiency", value: 88, unit: "%" },
     { category: "mobility", metricKey: "walking_speed", value: 1.35, unit: "m/s" },
   ];
+
+  const handleLogin = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiRequest("POST", "/api/auth/login", {
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      const { user, token } = await res.json();
+      await setAuth(user.id, token);
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      const msg = parseErrorMessage(e);
+      setError(msg);
+      Alert.alert("Login failed", msg);
+      setLoading(false);
+    }
+  };
+
+  const switchToLogin = () => {
+    setError("");
+    RNAnimated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: useNative }).start(() => {
+      setIsLoginMode(true);
+      setCurrentStep(1);
+      RNAnimated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: useNative }).start();
+    });
+  };
+
+  const switchToRegister = () => {
+    setError("");
+    RNAnimated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: useNative }).start(() => {
+      setIsLoginMode(false);
+      setCurrentStep(0);
+      RNAnimated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: useNative }).start();
+    });
+  };
 
   const registerAndPostMetrics = async (metrics: HealthKitMetric[]) => {
     const heightCm = parseFloat(height) || 170;
@@ -180,6 +218,9 @@ export default function OnboardingScreen() {
   };
 
   const isStepValid = (): boolean => {
+    if (isLoginMode) {
+      return email.trim().length > 0 && password.length >= 6;
+    }
     switch (currentStep) {
       case 0: return true; // Intro — always valid
       case 1: // Account: email, password, age required
@@ -202,16 +243,18 @@ export default function OnboardingScreen() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <View style={[s.container, { paddingTop: insets.top + 16 }]}>
-      <View style={s.progressRow}>
-        {steps.map((_, idx) => (
-          <View key={idx} style={s.progressTrack}>
-            <View style={[s.progressFill, { width: idx <= currentStep ? "100%" : "0%" }]} />
-          </View>
-        ))}
-      </View>
+      {!isLoginMode && (
+        <View style={s.progressRow}>
+          {steps.map((_, idx) => (
+            <View key={idx} style={s.progressTrack}>
+              <View style={[s.progressFill, { width: idx <= currentStep ? "100%" : "0%" }]} />
+            </View>
+          ))}
+        </View>
+      )}
 
       <RNAnimated.View style={[s.content, { opacity: fadeAnim }]}>
-        {currentStep === 0 && (
+        {currentStep === 0 && !isLoginMode && (
           <View style={s.centeredContent}>
             <View style={s.introIcon}>
               <Heart size={40} color={colors.white} />
@@ -223,7 +266,43 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {currentStep === 1 && (
+        {isLoginMode && (
+          <View style={s.formContent}>
+            <Text style={s.stepTitle}>Welcome back.</Text>
+            <Text style={s.stepSubtitle}>Sign in to your Aura account.</Text>
+            <View style={s.fieldGroup}>
+              <Text style={s.label}>Email</Text>
+              <TextInput
+                style={s.input}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                placeholder="you@example.com"
+                placeholderTextColor={colors.mutedForeground}
+                value={email}
+                onChangeText={setEmail}
+                testID="input-login-email"
+              />
+            </View>
+            <View style={s.fieldGroup}>
+              <Text style={s.label}>Password</Text>
+              <TextInput
+                style={s.input}
+                secureTextEntry
+                autoComplete="current-password"
+                placeholder="Your password"
+                placeholderTextColor={colors.mutedForeground}
+                value={password}
+                onChangeText={setPassword}
+                returnKeyType="go"
+                onSubmitEditing={handleLogin}
+                testID="input-login-password"
+              />
+            </View>
+          </View>
+        )}
+
+        {currentStep === 1 && !isLoginMode && (
           <View style={s.formContent}>
             <Text style={s.stepTitle}>Create your account.</Text>
             <Text style={s.stepSubtitle}>We'll use this to keep your data safe.</Text>
@@ -288,7 +367,7 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {currentStep === 2 && (
+        {currentStep === 2 && !isLoginMode && (
           <View style={s.formContent}>
             <Text style={s.stepTitle}>Your body composition.</Text>
             <Text style={s.stepSubtitle}>For more accurate metabolic estimations.</Text>
@@ -325,7 +404,7 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {currentStep === 3 && (
+        {currentStep === 3 && !isLoginMode && (
           <View style={s.centeredContent}>
             <View style={s.syncIcon}>
               <Activity size={40} color={colors.white} />
@@ -356,23 +435,49 @@ export default function OnboardingScreen() {
         {error ? <Text style={s.errorText}>{error}</Text> : null}
         <TouchableOpacity
           style={[s.ctaButton, (!isStepValid() || loading) && s.ctaButtonDisabled]}
-          onPress={handleNext}
+          onPress={isLoginMode ? handleLogin : handleNext}
           disabled={loading || !isStepValid()}
           activeOpacity={0.85}
-          testID="button-next"
+          testID={isLoginMode ? "button-login" : "button-next"}
         >
           {loading ? (
             <ActivityIndicator color={colors.white} />
           ) : (
             <>
               <Text style={s.ctaText}>
-                {currentStep === 0 ? "Get Started" : currentStep === steps.length - 1 ? "Connect & Finish" : "Continue"}
+                {isLoginMode
+                  ? "Sign In"
+                  : currentStep === 0
+                    ? "Get Started"
+                    : currentStep === steps.length - 1
+                      ? "Connect & Finish"
+                      : "Continue"}
               </Text>
               <ChevronRight size={16} color={colors.white} style={{ opacity: 0.5 }} />
             </>
           )}
         </TouchableOpacity>
-        {currentStep === steps.length - 1 && !loading && (
+        {currentStep === 0 && !isLoginMode && !loading && (
+          <TouchableOpacity
+            style={s.skipButton}
+            onPress={switchToLogin}
+            activeOpacity={0.7}
+            testID="button-switch-login"
+          >
+            <Text style={s.switchText}>I already have an account</Text>
+          </TouchableOpacity>
+        )}
+        {isLoginMode && !loading && (
+          <TouchableOpacity
+            style={s.skipButton}
+            onPress={switchToRegister}
+            activeOpacity={0.7}
+            testID="button-switch-register"
+          >
+            <Text style={s.switchText}>Create a new account</Text>
+          </TouchableOpacity>
+        )}
+        {currentStep === steps.length - 1 && !isLoginMode && !loading && (
           <TouchableOpacity
             style={s.skipButton}
             onPress={handleFinishWithSeedData}
@@ -447,4 +552,5 @@ const s = StyleSheet.create({
   errorText: { fontFamily: fonts.sans, fontSize: 14, color: colors.red500, textAlign: "center", marginBottom: 8 },
   skipButton: { alignItems: "center", paddingVertical: 14 },
   skipText: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground },
+  switchText: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.primary },
 });

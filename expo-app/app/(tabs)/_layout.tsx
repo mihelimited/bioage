@@ -59,7 +59,7 @@ export default function TabLayout() {
           title: "",
           tabBarIcon: ({ color, size }) => (
             <View style={[s.chatIcon, chatShadow as any]}>
-              <MessageCircle size={22} color={colors.white} />
+              <MessageCircle size={32} color={colors.white} />
             </View>
           ),
         }}
@@ -77,12 +77,12 @@ export default function TabLayout() {
 
 const s = StyleSheet.create({
   chatIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: -20,
+    marginTop: -12,
     backgroundColor: colors.primary,
   },
 });

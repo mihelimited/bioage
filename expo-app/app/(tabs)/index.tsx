@@ -159,7 +159,7 @@ export default function HomeScreen() {
                       <View>
                         <Text style={s.categoryName}>{config.label}</Text>
                         <Text style={s.qualityText}>
-                          Quality: {Math.round(dom.quality * 100)}%
+                          Data confidence: {Math.round(dom.quality * 100)}%
                         </Text>
                       </View>
                     </View>

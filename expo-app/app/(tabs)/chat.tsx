@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, StyleSheet, ActivityIndicator,
+  KeyboardAvoidingView, Platform, StyleSheet, ActivityIndicator, Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Send, Bot, Sparkles } from "lucide-react-native";
@@ -14,6 +14,87 @@ interface ChatMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
+}
+
+function renderMarkdown(text: string, isUser: boolean) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  return lines.map((line, lineIdx) => {
+    const isBullet = /^[-•*]\s/.test(line.trim());
+    const content = isBullet ? line.trim().replace(/^[-•*]\s/, "") : line;
+
+    // Parse inline formatting: **bold** and *italic*
+    const parts: { text: string; bold?: boolean; italic?: boolean }[] = [];
+    let remaining = content;
+    while (remaining.length > 0) {
+      const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+      const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
+
+      const firstMatch = [boldMatch, italicMatch]
+        .filter(Boolean)
+        .sort((a, b) => (a!.index ?? 0) - (b!.index ?? 0))[0];
+
+      if (!firstMatch || firstMatch.index === undefined) {
+        parts.push({ text: remaining });
+        break;
+      }
+
+      if (firstMatch.index > 0) {
+        parts.push({ text: remaining.slice(0, firstMatch.index) });
+      }
+      parts.push({
+        text: firstMatch[1],
+        bold: firstMatch === boldMatch,
+        italic: firstMatch === italicMatch,
+      });
+      remaining = remaining.slice(firstMatch.index + firstMatch[0].length);
+    }
+
+    return (
+      <Text key={lineIdx} style={[s.bubbleText, isUser && s.userBubbleText, lineIdx > 0 && { marginTop: 2 }]}>
+        {isBullet && "  •  "}
+        {parts.map((p, i) => (
+          <Text
+            key={i}
+            style={[
+              p.bold && { fontFamily: fonts.sansBold },
+              p.italic && { fontStyle: "italic" },
+            ]}
+          >
+            {p.text}
+          </Text>
+        ))}
+      </Text>
+    );
+  });
+}
+
+function TypingDots() {
+  const anims = useRef([new Animated.Value(0.3), new Animated.Value(0.3), new Animated.Value(0.3)]).current;
+
+  useEffect(() => {
+    const animations = anims.map((anim, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(anim, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+        ])
+      )
+    );
+    animations.forEach((a) => a.start());
+    return () => animations.forEach((a) => a.stop());
+  }, []);
+
+  return (
+    <View style={s.typingRow}>
+      <View style={s.typingDots}>
+        {anims.map((anim, i) => (
+          <Animated.View key={i} style={[s.dot, { opacity: anim }]} />
+        ))}
+      </View>
+    </View>
+  );
 }
 
 export default function ChatScreen() {
@@ -138,27 +219,27 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
-        {messages.map((msg) => (
-          <View
-            key={msg.id}
-            style={[s.messageBubbleRow, msg.role === "user" ? s.userRow : s.assistantRow]}
-          >
-            <View style={[s.bubble, msg.role === "user" ? s.userBubble : s.assistantBubble]}>
-              <Text style={[s.bubbleText, msg.role === "user" && s.userBubbleText]}>
-                {msg.content || (isStreaming ? "..." : "")}
-              </Text>
+        {messages.map((msg) => {
+          // Hide the empty assistant placeholder while streaming - typing dots shown instead
+          if (msg.role === "assistant" && !msg.content && isStreaming) return null;
+          return (
+            <View
+              key={msg.id}
+              style={[s.messageBubbleRow, msg.role === "user" ? s.userRow : s.assistantRow]}
+            >
+              <View style={[s.bubble, msg.role === "user" ? s.userBubble : s.assistantBubble]}>
+                {msg.role === "user" ? (
+                  <Text style={[s.bubbleText, s.userBubbleText]}>{msg.content}</Text>
+                ) : (
+                  renderMarkdown(msg.content, false)
+                )}
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         {isStreaming && messages[messages.length - 1]?.content === "" && (
-          <View style={s.typingRow}>
-            <View style={s.typingDots}>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={[s.dot, { opacity: 0.3 + i * 0.2 }]} />
-              ))}
-            </View>
-          </View>
+          <TypingDots />
         )}
       </ScrollView>
 
