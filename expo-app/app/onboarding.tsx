@@ -82,6 +82,7 @@ function parseErrorMessage(e: any): string {
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(0);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [dob, setDob] = useState("");
@@ -155,6 +156,7 @@ export default function OnboardingScreen() {
     const userAge = dobDate ? decimalAge(dobDate) : 30;
 
     const res = await apiRequest("POST", "/api/auth/register", {
+      name: name.trim(),
       email: email.trim().toLowerCase(),
       password,
       age: userAge,
@@ -246,10 +248,10 @@ export default function OnboardingScreen() {
     }
     switch (currentStep) {
       case 0: return true; // Intro — always valid
-      case 1: { // Account: email, password, DOB required
+      case 1: { // Account: name, email, password, DOB required
         const dobDate = parseDob(dob);
         const age = dobDate ? decimalAge(dobDate) : 0;
-        return email.trim().length > 0 && password.length >= 8 && dobDate !== null && age >= 13 && age <= 120;
+        return name.trim().length > 0 && email.trim().length > 0 && password.length >= 8 && dobDate !== null && age >= 13 && age <= 120;
       }
       case 2: // Body: height and weight required
         return height.trim().length > 0 && weight.trim().length > 0;
@@ -332,6 +334,19 @@ export default function OnboardingScreen() {
           <View style={s.formContent}>
             <Text style={s.stepTitle}>Create your account.</Text>
             <Text style={s.stepSubtitle}>We'll use this to keep your data safe.</Text>
+            <View style={s.fieldGroup}>
+              <Text style={s.label}>First Name</Text>
+              <TextInput
+                style={s.input}
+                autoCapitalize="words"
+                autoComplete="given-name"
+                placeholder="e.g. Alex"
+                placeholderTextColor={colors.mutedForeground}
+                value={name}
+                onChangeText={setName}
+                testID="input-name"
+              />
+            </View>
             <View style={s.fieldGroup}>
               <Text style={s.label}>Email</Text>
               <TextInput

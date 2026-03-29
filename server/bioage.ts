@@ -339,22 +339,33 @@ export function calculateBioAge(
         return mapping && mapping.domain === d;
       });
 
+      const mappedMetrics = domainMetrics.map(m => {
+        const hoursSince = (now - new Date(m.recordedAt).getTime()) / (1000 * 60 * 60);
+        return {
+          key: m.metricKey,
+          value: m.value,
+          unit: METRIC_TO_FEATURE[m.metricKey]?.unit ?? m.unit,
+          impact: 0,
+          fresh: hoursSince < STALE_HOURS,
+          isOverride: m.isOverride ?? false,
+        };
+      });
+
+      // For circadian domain, add synthetic metrics from computed features
+      if (d === "circadian" && features.circadian) {
+        const c = features.circadian;
+        mappedMetrics.push(
+          { key: "rhythm_score", value: Math.round(c.ra * 100), unit: "%", impact: 0, fresh: true, isOverride: false },
+          { key: "routine_stability", value: Math.round(c.is * 100), unit: "%", impact: 0, fresh: true, isOverride: false },
+        );
+      }
+
       return {
         domain: d,
         gap: Math.round((gaps[d]! * (weightsUsed[d] ?? 0) * config.shrinkageLambda) * 10) / 10,
         weight: Math.round((weightsUsed[d] ?? 0) * 100) / 100,
         quality: Math.round(quality[d] * 100) / 100,
-        metrics: domainMetrics.map(m => {
-          const hoursSince = (now - new Date(m.recordedAt).getTime()) / (1000 * 60 * 60);
-          return {
-            key: m.metricKey,
-            value: m.value,
-            unit: METRIC_TO_FEATURE[m.metricKey]?.unit ?? m.unit,
-            impact: 0,
-            fresh: hoursSince < STALE_HOURS,
-            isOverride: m.isOverride ?? false,
-          };
-        }),
+        metrics: mappedMetrics,
       };
     });
 

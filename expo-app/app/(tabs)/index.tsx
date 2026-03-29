@@ -41,6 +41,8 @@ const METRIC_RANGES: Record<string, MetricRange> = {
   walking_speed: { bad: [0, 1.0], average: [1.01, 1.3], excellent: [1.31, 3] },
   step_count: { bad: [0, 5000], average: [5001, 8000], excellent: [8001, 30000] },
   active_energy: { bad: [0, 200], average: [201, 400], excellent: [401, 2000] },
+  rhythm_score: { bad: [0, 40], average: [41, 65], excellent: [66, 100] },
+  routine_stability: { bad: [0, 35], average: [36, 60], excellent: [61, 100] },
 };
 
 function getMetricRating(key: string, value: number): "bad" | "average" | "excellent" | null {
@@ -72,6 +74,8 @@ const METRIC_LABELS: Record<string, string> = {
   sleep_efficiency: "Sleep Efficiency",
   sleep_midpoint_std: "Sleep Consistency",
   walking_speed: "Walking Speed",
+  rhythm_score: "Rhythm Score",
+  routine_stability: "Routine Stability",
 };
 
 export default function HomeScreen() {
@@ -83,6 +87,7 @@ export default function HomeScreen() {
   const animatedAge = useRef(new Animated.Value(0)).current;
   const [displayAge, setDisplayAge] = useState<number | null>(null);
   const [spectrumMetric, setSpectrumMetric] = useState<{ key: string; value: number } | null>(null);
+  const [showProjection, setShowProjection] = useState(false);
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -189,7 +194,11 @@ export default function HomeScreen() {
         {activeTab === "overview" && (
           <View style={s.section}>
             <View style={s.paceRow}>
-              <View style={[s.paceBadge, { backgroundColor: isYounger ? colors.green50 : colors.amber100 }]}>
+              <TouchableOpacity
+                style={[s.paceBadge, { backgroundColor: isYounger ? colors.green50 : colors.amber100 }]}
+                onPress={() => setShowProjection(true)}
+                activeOpacity={0.7}
+              >
                 {isYounger ? (
                   <TrendingDown size={12} color={colors.green700} />
                 ) : (
@@ -198,7 +207,7 @@ export default function HomeScreen() {
                 <Text style={[s.paceBadgeText, { color: isYounger ? colors.green700 : colors.amber600 }]}>
                   Pace of aging: {paceOfAging} yrs/yr
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             <Text style={s.headline} testID="text-headline">
@@ -445,6 +454,55 @@ export default function HomeScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal visible={showProjection} transparent animationType="slide">
+        <Pressable style={s.overlay} onPress={() => setShowProjection(false)}>
+          <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>Age Projection</Text>
+            <Text style={{ fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, marginBottom: 16 }}>
+              At your current pace of {paceOfAging} yrs/yr, here's how your body will age:
+            </Text>
+            <View style={s.sheetRows}>
+              {(() => {
+                const currentChronAge = Math.floor(chronAge);
+                const milestones = [10, 20, 30, 40].map(offset => currentChronAge + offset).filter(a => a <= 100);
+                return milestones.map(futureAge => {
+                  const yearsFromNow = futureAge - chronAge;
+                  const projectedBioAge = Math.round((bioAgeValue + yearsFromNow * paceOfAging) * 10) / 10;
+                  const diff = Math.round((projectedBioAge - futureAge) * 10) / 10;
+                  return (
+                    <View key={futureAge} style={s.sheetRow}>
+                      <View>
+                        <Text style={[s.sheetLabel, { color: colors.foreground, fontFamily: fonts.sansMedium }]}>
+                          At age {futureAge}
+                        </Text>
+                        <Text style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground }}>
+                          in {Math.round(yearsFromNow)} years
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[s.sheetValue, { fontFamily: fonts.serif, fontSize: 20 }]}>
+                          {projectedBioAge}
+                        </Text>
+                        <Text style={{ fontFamily: fonts.sansMedium, fontSize: 12, color: diff < 0 ? colors.green600 : diff > 0 ? colors.destructive : colors.mutedForeground }}>
+                          {diff > 0 ? "+" : ""}{diff} yrs
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+            </View>
+            <Text style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, textAlign: "center", marginTop: 8 }}>
+              Improving your metrics can slow your pace of aging
+            </Text>
+            <TouchableOpacity style={[s.sheetCta, { marginTop: 16 }]} onPress={() => setShowProjection(false)}>
+              <Text style={s.sheetCtaText}>Got it</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -520,9 +578,9 @@ const s = StyleSheet.create({
   metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metricTile: {
     flex: 1, minWidth: "45%", backgroundColor: "rgba(240,237,232,0.3)",
-    borderRadius: 16, padding: 12,
+    borderRadius: 16, padding: 12, justifyContent: "flex-start",
   },
-  metricLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, textTransform: "capitalize", marginBottom: 4 },
+  metricLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, textTransform: "capitalize", marginBottom: 4, lineHeight: 16 },
   metricValue: { fontFamily: fonts.serif, fontSize: 18, color: colors.foreground },
   metricUnit: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
   ratingBadge: { marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: "flex-start" },

@@ -173,6 +173,11 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const startDate = thirtyDaysAgo.toISOString();
 
+  // 6-month window for sleep and walking data (more history = better analysis)
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setDate(sixMonthsAgo.getDate() - 180);
+  const sixMonthStartDate = sixMonthsAgo.toISOString();
+
   // Also fetch 90-day window for VO2 trend analysis
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -207,7 +212,11 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
       limit: 30,
     });
     if (samples && samples.length > 0) {
-      const values: number[] = samples.map((r: any) => r.value).filter((v: number) => isFinite(v));
+      // react-native-health returns HRV SDNN in seconds; convert to milliseconds
+      const values: number[] = samples
+        .map((r: any) => r.value)
+        .filter((v: number) => isFinite(v))
+        .map((v: number) => v < 1 ? v * 1000 : v); // if < 1, it's in seconds → convert to ms
       const med = median(values);
       if (med !== undefined) {
         metrics.push({
@@ -289,8 +298,8 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   // ─── Sleep (use end-date keying, compute midpoint from full night span) ───
   try {
     const samples = await callHK(AppleHealthKit, "getSleepSamples", {
-      startDate,
-      limit: 60,
+      startDate: sixMonthStartDate,
+      limit: 1000,
     });
     if (samples && samples.length > 0) {
       interface NightData {
@@ -404,8 +413,8 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   // ─── Walking + Running Distance → estimate walking speed ───
   try {
     const distSamples = await callHK(AppleHealthKit, "getDailyDistanceWalkingRunningSamples", {
-      startDate,
-      limit: 30,
+      startDate: sixMonthStartDate,
+      limit: 180,
     });
     if (distSamples && distSamples.length > 0) {
       // getDailyDistanceWalkingRunningSamples returns daily distance in meters

@@ -84,7 +84,11 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => <Activity size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <View style={{ alignItems: "center", justifyContent: "center", height: 32 }}>
+              <Activity size={size} color={color} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
@@ -102,7 +106,11 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <View style={{ alignItems: "center", justifyContent: "center", height: 32 }}>
+              <Settings size={size} color={color} />
+            </View>
+          ),
         }}
       />
     </Tabs>
