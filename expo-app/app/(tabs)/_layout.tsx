@@ -85,7 +85,7 @@ export default function TabLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }) => (
-            <View style={{ alignItems: "center", justifyContent: "center", height: 32 }}>
+            <View style={s.tabIconWrap}>
               <Activity size={size} color={color} />
             </View>
           ),
@@ -107,7 +107,7 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => (
-            <View style={{ alignItems: "center", justifyContent: "center", height: 32 }}>
+            <View style={s.tabIconWrap}>
               <Settings size={size} color={color} />
             </View>
           ),
@@ -118,6 +118,12 @@ export default function TabLayout() {
 }
 
 const s = StyleSheet.create({
+  tabIconWrap: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   chatIcon: {
     width: 78,
     height: 78,

@@ -169,25 +169,21 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   }
 
   const metrics: HealthKitMetric[] = [];
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const startDate = thirtyDaysAgo.toISOString();
 
-  // 6-month window for sleep and walking data (more history = better analysis)
+  // Use 6-month window for all metrics on initial/full sync
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setDate(sixMonthsAgo.getDate() - 180);
-  const sixMonthStartDate = sixMonthsAgo.toISOString();
+  const startDate = sixMonthsAgo.toISOString();
 
-  // Also fetch 90-day window for VO2 trend analysis
-  const ninetyDaysAgo = new Date();
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-  const trendStartDate = ninetyDaysAgo.toISOString();
+  // 30-day window for primary metric values (most recent data)
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   // ─── Resting Heart Rate (use median, matching reference) ───
   try {
     const samples = await callHK(AppleHealthKit, "getRestingHeartRateSamples", {
       startDate,
-      limit: 30,
+      limit: 180,
     });
     if (samples && samples.length > 0) {
       const values = samples.map((r: any) => r.value).filter((v: number) => isFinite(v));
@@ -209,7 +205,7 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   try {
     const samples = await callHK(AppleHealthKit, "getHeartRateVariabilitySamples", {
       startDate,
-      limit: 30,
+      limit: 180,
     });
     if (samples && samples.length > 0) {
       // react-native-health returns HRV SDNN in seconds; convert to milliseconds
@@ -246,10 +242,10 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
 
   // ─── VO2 Max (use median of all in-window, track sample count + trend slope) ───
   try {
-    // Fetch 90-day window for trend, filter to 30-day for primary value
+    // Fetch 6-month window for trend, filter to 30-day for primary value
     const allSamples = await callHK(AppleHealthKit, "getVo2MaxSamples", {
-      startDate: trendStartDate,
-      limit: 30,
+      startDate,
+      limit: 180,
     });
     if (allSamples && allSamples.length > 0) {
       const allPoints = allSamples
@@ -298,15 +294,17 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   // ─── Sleep (use end-date keying, compute midpoint from full night span) ───
   try {
     const samples = await callHK(AppleHealthKit, "getSleepSamples", {
-      startDate: sixMonthStartDate,
-      limit: 1000,
+      startDate,
+      limit: 5000,
     });
     if (samples && samples.length > 0) {
       interface NightData {
-        asleepSeconds: number;
+        legacyAsleepSeconds: number; // ASLEEP (legacy, pre-iOS 16)
+        detailedAsleepSeconds: number; // CORE + DEEP + REM (modern, iOS 16+)
         inBedSeconds: number;
         start: Date;
         end: Date;
+        hasDetailedStages: boolean;
       }
       const nightMap = new Map<string, NightData>();
 
@@ -319,26 +317,35 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
         // Use end-date's local calendar day as the "night" key (matches reference)
         const key = localYYYYMMDD(sEnd);
         const night = nightMap.get(key) ?? {
-          asleepSeconds: 0,
+          legacyAsleepSeconds: 0,
+          detailedAsleepSeconds: 0,
           inBedSeconds: 0,
           start: sStart,
           end: sEnd,
+          hasDetailedStages: false,
         };
         night.start = sStart < night.start ? sStart : night.start;
         night.end = sEnd > night.end ? sEnd : night.end;
 
         if (s.value === "INBED") {
           night.inBedSeconds += durationSec;
-        } else if (s.value === "ASLEEP" || s.value === "CORE" || s.value === "DEEP" || s.value === "REM") {
-          night.asleepSeconds += durationSec;
+        } else if (s.value === "CORE" || s.value === "DEEP" || s.value === "REM") {
+          night.detailedAsleepSeconds += durationSec;
+          night.hasDetailedStages = true;
+        } else if (s.value === "ASLEEP") {
+          night.legacyAsleepSeconds += durationSec;
         }
         nightMap.set(key, night);
       }
 
       const nightList = [...nightMap.values()];
+      // Use detailed stages (CORE+DEEP+REM) if available, otherwise fall back to legacy ASLEEP
       const asleepHours = nightList
-        .map((n) => n.asleepSeconds / 3600)
-        .filter((h) => h > 0.5); // drop tiny artifacts
+        .map((n) => {
+          const secs = n.hasDetailedStages ? n.detailedAsleepSeconds : n.legacyAsleepSeconds;
+          return secs / 3600;
+        })
+        .filter((h) => h > 2 && h < 14); // drop artifacts (< 2h naps, > 14h errors)
 
       if (asleepHours.length > 0) {
         const avgSleep = mean(asleepHours);
@@ -354,8 +361,11 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
         // Sleep efficiency
         const efficiencies = nightList
           .filter((n) => n.inBedSeconds > 0)
-          .map((n) => (n.asleepSeconds / n.inBedSeconds) * 100)
-          .filter((x) => isFinite(x));
+          .map((n) => {
+            const asleep = n.hasDetailedStages ? n.detailedAsleepSeconds : n.legacyAsleepSeconds;
+            return (asleep / n.inBedSeconds) * 100;
+          })
+          .filter((x) => isFinite(x) && x > 0 && x <= 100);
         const avgEff = mean(efficiencies);
         if (avgEff !== undefined) {
           metrics.push({
@@ -410,56 +420,67 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
     console.log("Failed to read sleep:", e);
   }
 
-  // ─── Walking + Running Distance → estimate walking speed ───
+  // ─── Step count + Walking distance → derive walking speed ───
+  let dailySteps: number[] = [];
+  let dailyDistances: number[] = [];
+
+  try {
+    const samples = await callHK(AppleHealthKit, "getDailyStepCountSamples", {
+      startDate,
+      limit: 180,
+    });
+    if (samples && samples.length > 0) {
+      dailySteps = samples.map((r: any) => r.value).filter((v: number) => isFinite(v) && v > 0);
+      const avg = mean(dailySteps);
+      if (avg !== undefined) {
+        metrics.push({
+          category: "fitness",
+          metricKey: "step_count",
+          value: Math.round(avg),
+          unit: "steps/day",
+        });
+      }
+    }
+  } catch (e) {
+    console.log("Failed to read step count:", e);
+  }
+
   try {
     const distSamples = await callHK(AppleHealthKit, "getDailyDistanceWalkingRunningSamples", {
-      startDate: sixMonthStartDate,
+      startDate,
       limit: 180,
     });
     if (distSamples && distSamples.length > 0) {
-      // getDailyDistanceWalkingRunningSamples returns daily distance in meters
-      // Estimate walking speed: assume ~60 mins active walking per day
-      // This is a rough proxy; real walking speed would need per-sample data
-      const dailyDistances = distSamples
-        .map((r: any) => r.value)
-        .filter((v: number) => isFinite(v) && v > 0);
-      if (dailyDistances.length > 0) {
-        const medDist = median(dailyDistances);
-        if (medDist !== undefined && medDist > 0) {
-          // Estimate: typical person walks ~45-60 min/day actively
-          // speed = distance / (active_minutes * 60)
-          // Use 50 minutes as a reasonable estimate
-          const estimatedSpeed = medDist / (50 * 60);
-          metrics.push({
-            category: "mobility",
-            metricKey: "walking_speed",
-            value: Math.round(estimatedSpeed * 100) / 100,
-            unit: "m/s",
-          });
-        }
-      }
+      dailyDistances = distSamples.map((r: any) => r.value).filter((v: number) => isFinite(v) && v > 0);
     }
   } catch (e) {
     console.log("Failed to read walking distance:", e);
   }
 
-  // ─── Step count (daily totals + hourly bins for circadian analysis) ───
-  try {
-    const samples = await callHK(AppleHealthKit, "getDailyStepCountSamples", {
-      startDate,
-      limit: 30,
-    });
-    if (samples && samples.length > 0) {
-      const avg = samples.reduce((s: number, r: any) => s + r.value, 0) / samples.length;
+  // Estimate walking speed from steps + distance
+  // Walking time = steps / cadence (assume ~110 steps/min = 1.833 steps/sec)
+  // Walking speed = distance / walking_time
+  if (dailySteps.length > 0 && dailyDistances.length > 0) {
+    const count = Math.min(dailySteps.length, dailyDistances.length);
+    const speeds: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const steps = dailySteps[i];
+      const dist = dailyDistances[i];
+      if (steps > 500 && dist > 100) {
+        const walkingTimeSec = steps / (110 / 60); // 110 steps/min cadence
+        const speed = dist / walkingTimeSec;
+        if (speed > 0.3 && speed < 3.0) speeds.push(speed); // sanity check
+      }
+    }
+    const medSpeed = median(speeds);
+    if (medSpeed !== undefined) {
       metrics.push({
-        category: "fitness",
-        metricKey: "step_count",
-        value: Math.round(avg),
-        unit: "steps/day",
+        category: "mobility",
+        metricKey: "walking_speed",
+        value: Math.round(medSpeed * 100) / 100,
+        unit: "m/s",
       });
     }
-  } catch (e) {
-    console.log("Failed to read step count:", e);
   }
 
   // ─── Circadian rhythm proxy from sleep timing ───
@@ -473,7 +494,7 @@ export async function syncHealthData(): Promise<HealthKitMetric[]> {
   try {
     const samples = await callHK(AppleHealthKit, "getActiveEnergyBurned", {
       startDate,
-      limit: 30,
+      limit: 180,
     });
     if (samples && samples.length > 0) {
       const avg = samples.reduce((s: number, r: any) => s + r.value, 0) / samples.length;

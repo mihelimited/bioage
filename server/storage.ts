@@ -85,6 +85,30 @@ class DatabaseStorage implements IStorage {
   }
 
   async upsertMetric(metric: InsertHealthMetric): Promise<HealthMetric> {
+    // Check if a record exists for the same user + metricKey today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const existing = await db.select().from(healthMetrics)
+      .where(and(
+        eq(healthMetrics.userId, metric.userId),
+        eq(healthMetrics.metricKey, metric.metricKey),
+        sql`${healthMetrics.recordedAt} >= ${today}`,
+        sql`${healthMetrics.recordedAt} < ${tomorrow}`,
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      // Update existing record for today
+      const [updated] = await db.update(healthMetrics)
+        .set({ value: metric.value, unit: metric.unit, category: metric.category, isOverride: metric.isOverride })
+        .where(eq(healthMetrics.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+
     const [created] = await db.insert(healthMetrics).values(metric).returning();
     return created;
   }
