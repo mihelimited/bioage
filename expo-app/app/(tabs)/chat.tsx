@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, StyleSheet, ActivityIndicator, Animated,
+  Keyboard, Modal, Pressable, Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Send, Bot, Sparkles } from "lucide-react-native";
+import { Send, Bot, Sparkles, Clock, Plus, Trash2 } from "lucide-react-native";
 import { router } from "expo-router";
+import * as Haptics from "expo-haptics";
 import { colors, fonts } from "@/lib/theme";
 import { apiRequest, API_BASE } from "@/lib/api";
 import { getUserId, getAuthToken } from "@/lib/storage";
@@ -109,6 +111,9 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyList, setHistoryList] = useState<any[]>([]);
   const conversationIdRef = useRef<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -126,6 +131,70 @@ export default function ChatScreen() {
         });
     });
   }, []);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const welcomeMessage: ChatMessage = {
+    id: 0,
+    role: "assistant",
+    content: "Hi! I'm Aura, your wellness guide. Ask me anything about your health metrics, bio-age, or how to improve your aging pace.",
+  };
+
+  const loadConversations = async () => {
+    if (!userId) return;
+    try {
+      const res = await apiRequest("GET", `/api/users/${userId}/conversations`);
+      const convos = await res.json();
+      setHistoryList(convos);
+    } catch (e) {
+      console.error("Failed to load conversations:", e);
+    }
+  };
+
+  const loadConversation = async (convId: number) => {
+    try {
+      const res = await apiRequest("GET", `/api/conversations/${convId}/messages`);
+      const msgs = await res.json();
+      conversationIdRef.current = convId;
+      setMessages([
+        welcomeMessage,
+        ...msgs.map((m: any) => ({ id: m.id, role: m.role, content: m.content })),
+      ]);
+      setShowHistory(false);
+      scrollToBottom();
+    } catch (e) {
+      console.error("Failed to load conversation:", e);
+    }
+  };
+
+  const startNewConversation = async () => {
+    if (!userId) return;
+    try {
+      const res = await apiRequest("POST", `/api/users/${userId}/conversations`, { title: "Chat" });
+      const conv = await res.json();
+      conversationIdRef.current = conv.id;
+      setMessages([welcomeMessage]);
+      setShowHistory(false);
+    } catch (e) {
+      console.error("Failed to create conversation:", e);
+    }
+  };
+
+  const deleteConversation = async (convId: number) => {
+    try {
+      await apiRequest("DELETE", `/api/conversations/${convId}`);
+      setHistoryList((prev) => prev.filter((c) => c.id !== convId));
+      if (conversationIdRef.current === convId) {
+        await startNewConversation();
+      }
+    } catch (e) {
+      console.error("Failed to delete conversation:", e);
+    }
+  };
 
   const scrollToBottom = () => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -179,6 +248,7 @@ export default function ChatScreen() {
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, content: fullText || "I couldn't generate a response. Please try again." } : m))
       );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       scrollToBottom();
     } catch (e) {
       console.error("Chat error:", e);
@@ -200,16 +270,25 @@ export default function ChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={s.header}>
-        <View style={s.avatarGradient}>
-          <Bot size={20} color={colors.white} />
-        </View>
-        <View>
-          <Text style={s.headerTitle}>Aura Guide</Text>
-          <View style={s.headerSubRow}>
-            <Sparkles size={12} color={colors.primary} />
-            <Text style={s.headerSub}>Personalized Health AI</Text>
+        <View style={s.headerLeft}>
+          <View style={s.avatarGradient}>
+            <Bot size={20} color={colors.white} />
+          </View>
+          <View>
+            <Text style={s.headerTitle}>Aura Guide</Text>
+            <View style={s.headerSubRow}>
+              <Sparkles size={12} color={colors.primary} />
+              <Text style={s.headerSub}>Personalized Health AI</Text>
+            </View>
           </View>
         </View>
+        <TouchableOpacity
+          style={s.historyButton}
+          onPress={() => { loadConversations(); setShowHistory(true); }}
+          testID="button-history"
+        >
+          <Clock size={20} color={colors.foreground} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -243,7 +322,7 @@ export default function ChatScreen() {
         )}
       </ScrollView>
 
-      <View style={[s.inputArea, { paddingBottom: insets.bottom + 90 }]}>
+      <View style={[s.inputArea, { paddingBottom: keyboardVisible ? 8 : insets.bottom + 90 }]}>
         <View style={s.inputRow}>
           <TextInput
             style={s.textInput}
@@ -265,6 +344,50 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      <Modal visible={showHistory} transparent animationType="slide">
+        <Pressable style={s.overlay} onPress={() => setShowHistory(false)}>
+          <Pressable style={s.historySheet} onPress={(e) => e.stopPropagation()}>
+            <View style={s.historyHandle} />
+            <View style={s.historyHeader}>
+              <Text style={s.historyTitle}>Chat History</Text>
+              <TouchableOpacity style={s.newChatButton} onPress={startNewConversation}>
+                <Plus size={16} color={colors.white} />
+                <Text style={s.newChatText}>New Chat</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={s.historyScroll} showsVerticalScrollIndicator={false}>
+              {historyList.length === 0 && (
+                <Text style={s.historyEmpty}>No previous conversations.</Text>
+              )}
+              {historyList.map((conv) => (
+                <View key={conv.id} style={s.historyItem}>
+                  <TouchableOpacity
+                    style={s.historyItemContent}
+                    onPress={() => loadConversation(conv.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.historyItemTitle} numberOfLines={1}>
+                      {conv.title || "Chat"}
+                    </Text>
+                    <Text style={s.historyItemDate}>
+                      {new Date(conv.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={s.historyDeleteBtn}
+                    onPress={() => Alert.alert("Delete chat?", "This will permanently delete this conversation.", [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Delete", style: "destructive", onPress: () => deleteConversation(conv.id) },
+                    ])}
+                  >
+                    <Trash2 size={16} color={colors.destructive} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -272,10 +395,16 @@ export default function ChatScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: "row", alignItems: "center", gap: 12,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 24, paddingVertical: 12,
     borderBottomWidth: 1, borderColor: "rgba(0,0,0,0.05)",
     backgroundColor: "rgba(251,249,246,0.9)",
+  },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  historyButton: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(240,237,232,0.8)",
+    justifyContent: "center", alignItems: "center",
   },
   avatarGradient: {
     width: 40, height: 40, borderRadius: 20,
@@ -314,4 +443,33 @@ const s = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   sendButtonActive: { backgroundColor: colors.primary },
+  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.1)" },
+  historySheet: {
+    backgroundColor: "rgba(255,255,255,0.97)", borderTopLeftRadius: 36, borderTopRightRadius: 36,
+    padding: 32, paddingBottom: 40, maxHeight: "70%",
+  },
+  historyHandle: {
+    width: 48, height: 6, borderRadius: 3, backgroundColor: "rgba(0,0,0,0.1)",
+    alignSelf: "center", marginBottom: 24,
+  },
+  historyHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16,
+  },
+  historyTitle: { fontFamily: fonts.serif, fontSize: 24, color: colors.foreground },
+  newChatButton: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: colors.foreground, borderRadius: 9999,
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  newChatText: { fontFamily: fonts.sansMedium, fontSize: 13, color: colors.white },
+  historyScroll: { maxHeight: 400 },
+  historyEmpty: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, textAlign: "center", paddingVertical: 32 },
+  historyItem: {
+    flexDirection: "row", alignItems: "center",
+    paddingVertical: 14, borderBottomWidth: 1, borderColor: "rgba(0,0,0,0.05)",
+  },
+  historyItemContent: { flex: 1 },
+  historyItemTitle: { fontFamily: fonts.sansMedium, fontSize: 15, color: colors.foreground },
+  historyItemDate: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
+  historyDeleteBtn: { padding: 8 },
 });

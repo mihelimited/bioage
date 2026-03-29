@@ -1,7 +1,12 @@
+import { useEffect } from "react";
 import { Tabs } from "expo-router";
 import { View, StyleSheet, Platform } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import { Activity, MessageCircle, Settings } from "lucide-react-native";
 import { colors, fonts } from "@/lib/theme";
+import { isHealthKitAvailable, syncHealthData, getLastSyncTime, hasRequestedPermissions } from "@/lib/healthkit";
+import { getUserId } from "@/lib/storage";
+import { apiRequest } from "@/lib/api";
 
 const tabBarShadow = Platform.select({
   web: { boxShadow: "0 8px 16px rgba(160,150,140,0.15)" },
@@ -24,7 +29,36 @@ const chatShadow = Platform.select({
   },
 });
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
 export default function TabLayout() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!isHealthKitAvailable()) return;
+        const requested = await hasRequestedPermissions();
+        if (!requested) return; // User hasn't connected Health yet
+        const userId = await getUserId();
+        if (!userId) return;
+
+        const lastSync = await getLastSyncTime();
+        if (lastSync && Date.now() - new Date(lastSync).getTime() < ONE_DAY_MS) return;
+
+        console.log("[AutoSync] Starting daily background sync");
+        const metrics = await syncHealthData();
+        if (metrics.length > 0) {
+          await apiRequest("POST", `/api/users/${userId}/metrics/batch`, { metrics });
+          queryClient.invalidateQueries({ queryKey: ["bioage", userId] });
+          console.log("[AutoSync] Synced", metrics.length, "metrics");
+        }
+      } catch (e) {
+        console.warn("[AutoSync] Failed:", e);
+      }
+    })();
+  }, []);
+
   return (
     <Tabs
       screenOptions={{

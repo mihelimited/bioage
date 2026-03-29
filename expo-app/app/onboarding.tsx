@@ -24,6 +24,28 @@ import { syncHealthData, HealthKitMetric, requestHealthKitPermissions } from "@/
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+function parseDob(input: string): Date | null {
+  const match = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, mm, dd, yyyy] = match;
+  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  if (d.getMonth() !== Number(mm) - 1 || d.getDate() !== Number(dd)) return null;
+  return d;
+}
+
+function decimalAge(dob: Date): number {
+  const now = new Date();
+  const diffMs = now.getTime() - dob.getTime();
+  return Math.round((diffMs / (365.25 * 24 * 60 * 60 * 1000)) * 10) / 10;
+}
+
+function formatDobInput(text: string): string {
+  const digits = text.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
 const steps = [
   { id: "intro", title: "Welcome to Aura" },
   { id: "basics", title: "The Basics" },
@@ -62,7 +84,7 @@ export default function OnboardingScreen() {
   const [currentStep, setCurrentStep] = useState(0);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [age, setAge] = useState("");
+  const [dob, setDob] = useState("");
   const [sex, setSex] = useState<"male" | "female">("female");
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
@@ -129,7 +151,8 @@ export default function OnboardingScreen() {
   const registerAndPostMetrics = async (metrics: HealthKitMetric[]) => {
     const heightCm = parseFloat(height) || 170;
     const weightKg = parseFloat(weight) || 65;
-    const userAge = parseInt(age) || 30;
+    const dobDate = parseDob(dob);
+    const userAge = dobDate ? decimalAge(dobDate) : 30;
 
     const res = await apiRequest("POST", "/api/auth/register", {
       email: email.trim().toLowerCase(),
@@ -223,8 +246,11 @@ export default function OnboardingScreen() {
     }
     switch (currentStep) {
       case 0: return true; // Intro — always valid
-      case 1: // Account: email, password, age required
-        return email.trim().length > 0 && password.length >= 8 && age.trim().length > 0;
+      case 1: { // Account: email, password, DOB required
+        const dobDate = parseDob(dob);
+        const age = dobDate ? decimalAge(dobDate) : 0;
+        return email.trim().length > 0 && password.length >= 8 && dobDate !== null && age >= 13 && age <= 120;
+      }
       case 2: // Body: height and weight required
         return height.trim().length > 0 && weight.trim().length > 0;
       case 3: return true; // Sync — always valid
@@ -334,15 +360,16 @@ export default function OnboardingScreen() {
               />
             </View>
             <View style={s.fieldGroup}>
-              <Text style={s.label}>Chronological Age</Text>
+              <Text style={s.label}>Date of Birth</Text>
               <TextInput
                 style={s.input}
                 keyboardType="number-pad"
-                placeholder="e.g. 32"
+                placeholder="MM/DD/YYYY"
                 placeholderTextColor={colors.mutedForeground}
-                value={age}
-                onChangeText={setAge}
-                testID="input-age"
+                value={dob}
+                onChangeText={(t) => setDob(formatDobInput(t))}
+                maxLength={10}
+                testID="input-dob"
               />
             </View>
             <View style={s.fieldGroup}>

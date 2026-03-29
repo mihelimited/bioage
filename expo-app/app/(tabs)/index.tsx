@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
-  Modal, Pressable, StyleSheet, Dimensions,
+  Modal, Pressable, StyleSheet, Dimensions, Animated,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import Svg, { Path } from "react-native-svg";
 import {
   HeartPulse, Activity, Moon, Zap, Footprints, ChevronRight,
-  TrendingDown, TrendingUp, Sparkles, Share2, AlertCircle,
-  CheckCircle2, Clock,
+  TrendingDown, TrendingUp, Sparkles, Share2, Clock,
 } from "lucide-react-native";
 import { colors, fonts, radii } from "@/lib/theme";
 import { apiGet } from "@/lib/api";
@@ -18,10 +18,60 @@ import { router } from "expo-router";
 
 const DOMAIN_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
   fitness: { icon: Activity, color: colors.orange500, bg: colors.orange50, label: "Fitness" },
-  autonomic: { icon: HeartPulse, color: colors.rose500, bg: colors.rose50, label: "Autonomic" },
-  circadian: { icon: Zap, color: colors.indigo500, bg: colors.indigo50, label: "Circadian" },
+  autonomic: { icon: HeartPulse, color: colors.rose500, bg: colors.rose50, label: "Heart & Recovery" },
+  circadian: { icon: Zap, color: colors.indigo500, bg: colors.indigo50, label: "Rhythm & Routine" },
   sleep: { icon: Moon, color: colors.blue500, bg: colors.blue50, label: "Sleep" },
   mobility: { icon: Footprints, color: colors.emerald500, bg: colors.emerald50, label: "Mobility" },
+};
+
+// Reference ranges for metric spectrum (bad → average → excellent)
+// Format: [excellent_low, average_low, average_high, bad_high] or inverse
+interface MetricRange {
+  bad: [number, number];
+  average: [number, number];
+  excellent: [number, number];
+}
+const METRIC_RANGES: Record<string, MetricRange> = {
+  resting_hr: { excellent: [40, 55], average: [56, 70], bad: [71, 100] },
+  hrv: { bad: [0, 25], average: [26, 50], excellent: [51, 150] },
+  vo2_max: { bad: [0, 30], average: [31, 42], excellent: [43, 70] },
+  sleep_duration: { bad: [0, 6], average: [6.1, 7.5], excellent: [7.6, 10] },
+  sleep_efficiency: { bad: [0, 80], average: [81, 89], excellent: [90, 100] },
+  sleep_midpoint_std: { excellent: [0, 0.5], average: [0.51, 1.2], bad: [1.21, 5] },
+  walking_speed: { bad: [0, 1.0], average: [1.01, 1.3], excellent: [1.31, 3] },
+  step_count: { bad: [0, 5000], average: [5001, 8000], excellent: [8001, 30000] },
+  active_energy: { bad: [0, 200], average: [201, 400], excellent: [401, 2000] },
+};
+
+function getMetricRating(key: string, value: number): "bad" | "average" | "excellent" | null {
+  const range = METRIC_RANGES[key];
+  if (!range) return null;
+  if (value >= range.excellent[0] && value <= range.excellent[1]) return "excellent";
+  if (value >= range.average[0] && value <= range.average[1]) return "average";
+  if (value >= range.bad[0] && value <= range.bad[1]) return "bad";
+  return null;
+}
+
+const RATING_CONFIG = {
+  bad: { label: "Below avg", color: colors.destructive, bg: "rgba(248,113,113,0.1)" },
+  average: { label: "Average", color: colors.amber600, bg: "rgba(217,119,6,0.1)" },
+  excellent: { label: "Excellent", color: colors.green600, bg: "rgba(22,163,74,0.1)" },
+};
+
+const HIDDEN_METRICS = new Set(["sleep_midpoint_std", "sleep_efficiency"]);
+
+const METRIC_LABELS: Record<string, string> = {
+  resting_hr: "Resting HR",
+  hrv: "HRV",
+  hrv_cv: "HRV Consistency",
+  vo2_max: "VO2 Max",
+  vo2_slope: "VO2 Trend",
+  step_count: "Daily Steps",
+  active_energy: "Active Energy",
+  sleep_duration: "Sleep Duration",
+  sleep_efficiency: "Sleep Efficiency",
+  sleep_midpoint_std: "Sleep Consistency",
+  walking_speed: "Walking Speed",
 };
 
 export default function HomeScreen() {
@@ -30,6 +80,9 @@ export default function HomeScreen() {
   const [showInsight, setShowInsight] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
+  const animatedAge = useRef(new Animated.Value(0)).current;
+  const [displayAge, setDisplayAge] = useState<number | null>(null);
+  const [spectrumMetric, setSpectrumMetric] = useState<{ key: string; value: number } | null>(null);
 
   useEffect(() => {
     getUserId().then((id) => {
@@ -44,9 +97,33 @@ export default function HomeScreen() {
     enabled: !!userId,
   });
 
+  useEffect(() => {
+    if (!bioage?.bioAge) return;
+    const newAge = bioage.bioAge;
+    (async () => {
+      const stored = await AsyncStorage.getItem("aura_last_bioage");
+      const oldAge = stored ? parseFloat(stored) : newAge;
+      animatedAge.setValue(oldAge);
+      Animated.timing(animatedAge, {
+        toValue: newAge,
+        duration: 1500,
+        useNativeDriver: false,
+      }).start();
+      const listenerId = animatedAge.addListener(({ value }) => setDisplayAge(Math.round(value * 10) / 10));
+      await AsyncStorage.setItem("aura_last_bioage", String(newAge));
+      return () => animatedAge.removeListener(listenerId);
+    })();
+  }, [bioage?.bioAge]);
+
   const { data: history } = useQuery({
     queryKey: ["bioage-history", userId],
     queryFn: () => apiGet<any[]>(`/api/users/${userId}/bioage/history`),
+    enabled: !!userId,
+  });
+
+  const { data: metricAverages } = useQuery({
+    queryKey: ["metric-averages", userId],
+    queryFn: () => apiGet<Record<string, { week: number | null; month: number | null; sixMonth: number | null }>>(`/api/users/${userId}/metrics/averages`),
     enabled: !!userId,
   });
 
@@ -66,8 +143,9 @@ export default function HomeScreen() {
   const bioAgeValue = bioage?.bioAge ?? 0;
   const chronAge = bioage?.chronologicalAge ?? 0;
   const ageGap = bioage?.ageGap ?? 0;
-  const bioAgeInt = Math.floor(bioAgeValue);
-  const bioAgeDec = Math.round((bioAgeValue - bioAgeInt) * 10);
+  const shownAge = displayAge ?? bioAgeValue;
+  const bioAgeInt = Math.floor(shownAge);
+  const bioAgeDec = Math.round((shownAge - bioAgeInt) * 10);
   const isYounger = paceOfAging < 1;
 
   return (
@@ -145,7 +223,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={s.sectionTitle}>Domain Breakdown</Text>
+            <Text style={s.sectionTitle}>Health Breakdown</Text>
             {bioage?.domains?.map((dom: any) => {
               const config = DOMAIN_CONFIG[dom.domain] || DOMAIN_CONFIG.fitness;
               const Icon = config.icon;
@@ -156,12 +234,7 @@ export default function HomeScreen() {
                       <View style={[s.categoryIcon, { backgroundColor: config.bg }]}>
                         <Icon size={16} color={config.color} />
                       </View>
-                      <View>
-                        <Text style={s.categoryName}>{config.label}</Text>
-                        <Text style={s.qualityText}>
-                          Data confidence: {Math.round(dom.quality * 100)}%
-                        </Text>
-                      </View>
+                      <Text style={s.categoryName}>{config.label}</Text>
                     </View>
                     <Text
                       style={[s.categoryImpact, { color: dom.gap < 0 ? colors.green600 : dom.gap > 0 ? colors.destructive : colors.mutedForeground }]}
@@ -170,22 +243,36 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <View style={s.metricsGrid}>
-                    {dom.metrics?.map((m: any) => (
-                      <View key={m.key} style={s.metricTile}>
-                        <View style={s.metricHeader}>
-                          <Text style={s.metricLabel}>{m.key.replace(/_/g, " ")}</Text>
-                          {m.fresh ? (
-                            <CheckCircle2 size={14} color={colors.green500} />
-                          ) : (
-                            <AlertCircle size={14} color={colors.orange400} />
+                    {dom.metrics?.filter((m: any) => !HIDDEN_METRICS.has(m.key)).map((m: any) => {
+                      const rating = getMetricRating(m.key, parseFloat(m.value));
+                      const ratingCfg = rating ? RATING_CONFIG[rating] : null;
+                      const avgs = metricAverages?.[m.key];
+                      return (
+                        <View key={m.key} style={s.metricTile}>
+                          <Text style={s.metricLabel}>{METRIC_LABELS[m.key] || m.key.replace(/_/g, " ")}</Text>
+                          <Text style={s.metricValue}>
+                            {m.value}{" "}
+                            <Text style={s.metricUnit}>{m.unit}</Text>
+                          </Text>
+                          {ratingCfg && (
+                            <TouchableOpacity
+                              style={[s.ratingBadge, { backgroundColor: ratingCfg.bg }]}
+                              onPress={() => setSpectrumMetric({ key: m.key, value: parseFloat(m.value) })}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[s.ratingText, { color: ratingCfg.color }]}>{ratingCfg.label}</Text>
+                            </TouchableOpacity>
+                          )}
+                          {avgs && (avgs.week !== null || avgs.month !== null || avgs.sixMonth !== null) && (
+                            <Text style={s.avgText}>
+                              {avgs.week !== null ? `1w: ${avgs.week}` : ""}
+                              {avgs.month !== null ? `${avgs.week !== null ? " | " : ""}1m: ${avgs.month}` : ""}
+                              {avgs.sixMonth !== null ? `${(avgs.week !== null || avgs.month !== null) ? " | " : ""}6m: ${avgs.sixMonth}` : ""}
+                            </Text>
                           )}
                         </View>
-                        <Text style={s.metricValue}>
-                          {m.value}{" "}
-                          <Text style={s.metricUnit}>{m.unit}</Text>
-                        </Text>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 </View>
               );
@@ -249,7 +336,7 @@ export default function HomeScreen() {
         <Pressable style={s.overlay} onPress={() => setShowInsight(false)}>
           <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>Domain Impact</Text>
+            <Text style={s.sheetTitle}>Impact by Area</Text>
             <View style={s.sheetRows}>
               <View style={s.sheetRow}>
                 <Text style={s.sheetLabel}>Chronological Age</Text>
@@ -288,6 +375,72 @@ export default function HomeScreen() {
             <TouchableOpacity style={s.sheetCta} onPress={() => setShowShare(false)}>
               <Share2 size={20} color={colors.white} />
               <Text style={s.sheetCtaText}>Share Snapshot</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={!!spectrumMetric} transparent animationType="slide">
+        <Pressable style={s.overlay} onPress={() => setSpectrumMetric(null)}>
+          <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={s.sheetHandle} />
+            {spectrumMetric && (() => {
+              const range = METRIC_RANGES[spectrumMetric.key];
+              if (!range) return null;
+              const label = METRIC_LABELS[spectrumMetric.key] || spectrumMetric.key.replace(/_/g, " ");
+              const rating = getMetricRating(spectrumMetric.key, spectrumMetric.value);
+              const allValues = [range.bad[0], range.bad[1], range.average[0], range.average[1], range.excellent[0], range.excellent[1]];
+              const min = Math.min(...allValues);
+              const max = Math.max(...allValues);
+              const total = max - min || 1;
+              const zones = [
+                { ...range.bad, color: "rgba(248,113,113,0.25)", label: "Below avg" },
+                { ...range.average, color: "rgba(217,119,6,0.2)", label: "Average" },
+                { ...range.excellent, color: "rgba(22,163,74,0.2)", label: "Excellent" },
+              ].sort((a, b) => a[0] - b[0]);
+              const markerPos = Math.max(0, Math.min(1, (spectrumMetric.value - min) / total));
+
+              return (
+                <View style={{ gap: 16 }}>
+                  <Text style={s.sheetTitle}>{label}</Text>
+                  <Text style={{ fontFamily: fonts.serif, fontSize: 32, color: colors.foreground }}>
+                    {spectrumMetric.value}
+                    {rating && (
+                      <Text style={{ fontFamily: fonts.sansMedium, fontSize: 14, color: RATING_CONFIG[rating].color }}>
+                        {"  "}{RATING_CONFIG[rating].label}
+                      </Text>
+                    )}
+                  </Text>
+                  <View style={s.spectrumBar}>
+                    {zones.map((z, i) => (
+                      <View
+                        key={i}
+                        style={{
+                          flex: (z[1] - z[0]) / total,
+                          backgroundColor: z.color,
+                          height: 12,
+                          borderTopLeftRadius: i === 0 ? 6 : 0,
+                          borderBottomLeftRadius: i === 0 ? 6 : 0,
+                          borderTopRightRadius: i === zones.length - 1 ? 6 : 0,
+                          borderBottomRightRadius: i === zones.length - 1 ? 6 : 0,
+                        }}
+                      />
+                    ))}
+                    <View style={[s.spectrumMarker, { left: `${markerPos * 100}%` }]} />
+                  </View>
+                  <View style={s.spectrumLabels}>
+                    {zones.map((z, i) => (
+                      <View key={i} style={{ flex: (z[1] - z[0]) / total, alignItems: i === 0 ? "flex-start" : i === zones.length - 1 ? "flex-end" : "center" }}>
+                        <Text style={s.spectrumZoneLabel}>{z.label}</Text>
+                        <Text style={s.spectrumZoneRange}>{z[0]} - {z[1]}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })()}
+            <TouchableOpacity style={[s.sheetCta, { marginTop: 24 }]} onPress={() => setSpectrumMetric(null)}>
+              <Text style={s.sheetCtaText}>Got it</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -363,17 +516,18 @@ const s = StyleSheet.create({
   categoryLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   categoryIcon: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
   categoryName: { fontFamily: fonts.sansMedium, fontSize: 15, color: colors.foreground },
-  qualityText: { fontFamily: fonts.sans, fontSize: 11, color: colors.mutedForeground },
   categoryImpact: { fontFamily: fonts.sansMedium, fontSize: 14 },
   metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metricTile: {
     flex: 1, minWidth: "45%", backgroundColor: "rgba(240,237,232,0.3)",
     borderRadius: 16, padding: 12,
   },
-  metricHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 },
-  metricLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, textTransform: "capitalize" },
+  metricLabel: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground, textTransform: "capitalize", marginBottom: 4 },
   metricValue: { fontFamily: fonts.serif, fontSize: 18, color: colors.foreground },
   metricUnit: { fontFamily: fonts.sans, fontSize: 12, color: colors.mutedForeground },
+  ratingBadge: { marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: "flex-start" },
+  ratingText: { fontFamily: fonts.sansMedium, fontSize: 11 },
+  avgText: { fontFamily: fonts.sans, fontSize: 10, color: colors.mutedForeground, marginTop: 4, opacity: 0.8 },
   trendSubtitle: { fontFamily: fonts.sans, fontSize: 14, color: colors.mutedForeground, marginTop: -8 },
   trendChart: {
     backgroundColor: colors.card, borderRadius: 36, padding: 24,
@@ -412,4 +566,12 @@ const s = StyleSheet.create({
     letterSpacing: 3,
   },
   shareVia: { fontFamily: fonts.sans, fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 24 },
+  spectrumBar: { flexDirection: "row", height: 12, borderRadius: 6, overflow: "hidden", position: "relative" },
+  spectrumMarker: {
+    position: "absolute", top: -4, width: 4, height: 20, borderRadius: 2,
+    backgroundColor: colors.foreground, marginLeft: -2,
+  },
+  spectrumLabels: { flexDirection: "row", marginTop: 4 },
+  spectrumZoneLabel: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.mutedForeground },
+  spectrumZoneRange: { fontFamily: fonts.sans, fontSize: 10, color: colors.mutedForeground, opacity: 0.7 },
 });

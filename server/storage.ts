@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import {
   users, healthMetrics, bioAgeSnapshots, conversations, messages,
   type User, type InsertUser,
@@ -8,6 +8,13 @@ import {
   type Conversation, type InsertConversation,
   type Message, type InsertMessage,
 } from "@shared/schema";
+
+export interface RecentMessage {
+  role: string;
+  content: string;
+  conversationId: number;
+  createdAt: Date;
+}
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -26,9 +33,12 @@ export interface IStorage {
   getConversations(userId: number): Promise<Conversation[]>;
   getConversation(id: number): Promise<Conversation | undefined>;
   createConversation(conv: InsertConversation): Promise<Conversation>;
+  updateConversation(id: number, data: Partial<{ title: string }>): Promise<Conversation>;
   deleteConversation(id: number): Promise<void>;
   getMessages(conversationId: number): Promise<Message[]>;
   createMessage(msg: InsertMessage): Promise<Message>;
+  getRecentUserMessages(userId: number, limit?: number): Promise<RecentMessage[]>;
+  getMetricAverages(userId: number): Promise<Record<string, { week: number | null; month: number | null; sixMonth: number | null }>>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -115,6 +125,11 @@ class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateConversation(id: number, data: Partial<{ title: string }>): Promise<Conversation> {
+    const [updated] = await db.update(conversations).set(data).where(eq(conversations.id, id)).returning();
+    return updated;
+  }
+
   async deleteConversation(id: number): Promise<void> {
     await db.delete(messages).where(eq(messages.conversationId, id));
     await db.delete(conversations).where(eq(conversations.id, id));
@@ -129,6 +144,67 @@ class DatabaseStorage implements IStorage {
   async createMessage(msg: InsertMessage): Promise<Message> {
     const [created] = await db.insert(messages).values(msg).returning();
     return created;
+  }
+
+  async getRecentUserMessages(userId: number, limit = 50): Promise<RecentMessage[]> {
+    const userConvos = await db.select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.userId, userId));
+    if (userConvos.length === 0) return [];
+
+    const convoIds = userConvos.map(c => c.id);
+    const allMessages = await db.select({
+      role: messages.role,
+      content: messages.content,
+      conversationId: messages.conversationId,
+      createdAt: messages.createdAt,
+    })
+      .from(messages)
+      .where(
+        convoIds.length === 1
+          ? eq(messages.conversationId, convoIds[0])
+          : sql`${messages.conversationId} IN (${sql.join(convoIds.map(id => sql`${id}`), sql`, `)})`
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
+
+    return allMessages.reverse();
+  }
+
+  async getMetricAverages(userId: number): Promise<Record<string, { week: number | null; month: number | null; sixMonth: number | null }>> {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixMonthAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+
+    const rows = await db.select({
+      metricKey: healthMetrics.metricKey,
+      value: healthMetrics.value,
+      recordedAt: healthMetrics.recordedAt,
+    })
+      .from(healthMetrics)
+      .where(and(
+        eq(healthMetrics.userId, userId),
+        sql`${healthMetrics.recordedAt} >= ${sixMonthAgo}`,
+      ))
+      .orderBy(desc(healthMetrics.recordedAt));
+
+    const byKey: Record<string, Array<{ value: number; recordedAt: Date }>> = {};
+    for (const row of rows) {
+      if (!byKey[row.metricKey]) byKey[row.metricKey] = [];
+      byKey[row.metricKey].push({ value: row.value, recordedAt: row.recordedAt });
+    }
+
+    const result: Record<string, { week: number | null; month: number | null; sixMonth: number | null }> = {};
+    for (const [key, entries] of Object.entries(byKey)) {
+      const avg = (items: typeof entries) => items.length > 0 ? Math.round(items.reduce((s, e) => s + e.value, 0) / items.length * 10) / 10 : null;
+      result[key] = {
+        week: avg(entries.filter(e => e.recordedAt >= weekAgo)),
+        month: avg(entries.filter(e => e.recordedAt >= monthAgo)),
+        sixMonth: avg(entries),
+      };
+    }
+    return result;
   }
 }
 

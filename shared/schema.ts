@@ -7,7 +7,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").unique(),
   passwordHash: text("password_hash"),
-  age: integer("age").notNull(),
+  age: real("age").notNull(),
   sex: text("sex").notNull(),
   heightCm: real("height_cm"),
   weightKg: real("weight_kg"),
@@ -62,11 +62,13 @@ export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
-export const insertHealthMetricSchema = createInsertSchema(healthMetrics).omit({ id: true, recordedAt: true }).extend({
-  value: z.number().min(0).max(100000),
-  metricKey: z.string().min(1).max(100),
+export const insertHealthMetricSchema = z.object({
+  userId: z.number(),
   category: z.string().min(1).max(50),
-  unit: z.string().min(1).max(20),
+  metricKey: z.string().min(1).max(100),
+  value: z.number().min(-1000).max(100000),
+  unit: z.string().min(1).max(500),
+  isOverride: z.boolean().optional().default(false),
 });
 export const insertBioAgeSnapshotSchema = createInsertSchema(bioAgeSnapshots).omit({ id: true, calculatedAt: true });
 export const insertConversationSchema = createInsertSchema(conversations).omit({ id: true, createdAt: true });

@@ -92,7 +92,23 @@ export default function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["bioage", userId] });
       const syncTime = new Date().toISOString();
       setLastSync(syncTime);
-      Alert.alert("Synced", `Successfully synced ${metrics.length} metrics from Apple Health.`);
+
+      // Show which categories were found
+      const categories = [...new Set(metrics.map((m) => m.category))];
+      const categoryLabels: Record<string, string> = {
+        autonomic: "Heart & Recovery",
+        fitness: "Fitness",
+        sleep: "Sleep",
+        circadian: "Circadian",
+        mobility: "Mobility",
+      };
+      const found = categories.map((c) => categoryLabels[c] || c).join(", ");
+      const allExpected = ["autonomic", "fitness", "sleep", "circadian", "mobility"];
+      const missing = allExpected.filter((c) => !categories.includes(c));
+      const missingText = missing.length > 0
+        ? `\n\nNo data found for: ${missing.map((c) => categoryLabels[c] || c).join(", ")}. This usually means Apple Health has no recent readings for those types.`
+        : "";
+      Alert.alert("Synced", `${metrics.length} metrics synced from: ${found}.${missingText}`);
     } catch (e: any) {
       console.error("Health sync error:", e);
       Alert.alert("Sync Error", e.message || "Failed to sync health data.");

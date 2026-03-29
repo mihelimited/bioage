@@ -141,6 +141,13 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/users/:id/metrics/averages", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!requireOwnership(req.userId, id, res)) return;
+    const averages = await storage.getMetricAverages(id);
+    res.json(averages);
+  });
+
   app.post("/api/users/:id/metrics/batch", async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -195,7 +202,15 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     if (!requireOwnership(req.userId, id, res)) return;
     const convos = await storage.getConversations(id);
-    res.json(convos);
+    // Only return conversations that have at least one user message
+    const withMessages = await Promise.all(
+      convos.map(async (c) => {
+        const msgs = await storage.getMessages(c.id);
+        const hasUserMsg = msgs.some(m => m.role === "user");
+        return hasUserMsg ? c : null;
+      })
+    );
+    res.json(withMessages.filter(Boolean));
   });
 
   app.post("/api/users/:id/conversations", async (req, res) => {
@@ -251,6 +266,13 @@ export async function registerRoutes(
         content: m.content,
       }));
 
+      // Fetch last 50 messages across all conversations for memory/context
+      const recentMessages = await storage.getRecentUserMessages(userId, 50);
+      const priorContext = recentMessages
+        .filter(m => m.conversationId !== convId) // exclude current conversation (already in chatHistory)
+        .map(m => `${m.role}: ${m.content}`)
+        .join("\n");
+
       const systemPrompt = `You are Aura, a warm and knowledgeable wellness AI assistant inside a biological age tracking app.
 The user's profile:
 - Chronological age: ${user!.age}
@@ -270,7 +292,11 @@ Guidelines:
 - Reference their specific numbers when relevant
 - Be encouraging but honest about areas needing improvement
 - Keep responses concise (2-3 short paragraphs max)
-- If asked about something outside health/wellness, gently redirect`;
+- If asked about something outside health/wellness, gently redirect
+- You have memory of previous conversations. Reference prior topics naturally when relevant, but don't force it${priorContext ? `
+
+Previous conversation context (for reference — do not repeat verbatim):
+${priorContext}` : ""}`;
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -296,6 +322,25 @@ Guidelines:
       }
 
       await storage.createMessage({ conversationId: convId, role: "assistant", content: fullResponse });
+
+      // Auto-generate a 3-word title after the first user message
+      if (conv.title === "Chat" || conv.title === "New Chat") {
+        const userMsgCount = chatHistory.filter(m => m.role === "user").length;
+        if (userMsgCount === 1) {
+          openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: "Summarize this conversation topic in exactly 3 words. No punctuation. Example: Sleep Quality Tips" },
+              { role: "user", content },
+            ],
+            max_tokens: 10,
+          }).then(async (titleRes) => {
+            const title = titleRes.choices[0]?.message?.content?.trim() || "Chat";
+            await storage.updateConversation(convId, { title });
+          }).catch(() => {}); // fire-and-forget
+        }
+      }
+
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (e: any) {
